@@ -41,7 +41,7 @@ func Render(path string) string {
 func renderHome() string {
 	var b strings.Builder
 	b.WriteString("# Arobi Assurance Agent SDK — Evidence Anchor\n\n")
-	b.WriteString("Out-of-the-box governed agent framework in Gno: every agent action passes through a fail-closed ")
+	b.WriteString("Out-of-the-box governed agent framework, built on Gno.land: every agent action passes through a fail-closed ")
 	b.WriteString("`PolicyEngine`, mints a single-use `EffectWarrant`, emits a hash-chained `DecisionReceipt` + ")
 	b.WriteString("`EffectClosure`, and anchors RFC 6962 Merkle roots directly on Gno.land.\n\n")
 

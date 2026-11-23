@@ -1,4 +1,4 @@
-# Gnome Tavern Hackathon Submission Pack — **Immaculate Agent SDK Builder**
+# Gnome Tavern Hackathon Submission Pack — **Immaculate SDK Agent Builder**
 
 *(100% compliant with official Gnome Tavern Hackathon | Gno.land rules: no `"Gno"` prefix in Build Name, public MIT repository, genuine Gno packages + stateful realm submitted on `onyx-1`, verified scientific & live public benchmarks, zero private wallet/proprietary disclosures.)*
 
@@ -6,14 +6,14 @@
 
 ## Copy-Paste DoraHacks `Create a new Build` Fields
 
-- **Name of your Build:** `Immaculate Agent SDK Builder`
+- **Name of your Build:** `Immaculate SDK Agent Builder`
 - **Brief description of this Build:**
-  > Consensus-safe autonomous agent & Familiar SDK in pure fixed-point Gno — out-of-the-box RFC 6962 cryptographic evidence, Hampel-CUSUM drift circuit breakers, poison-resistant Hybrid RRF MemoryVault, attenuated object-capabilities, stdio MCP server, and `Ullumii` / `gnosh.ai` / sovereign local GPU adapters anchored on Gno.land.
+  > Consensus-safe autonomous agent and Familiar SDK in pure fixed-point code, built on Gno.land — out-of-the-box RFC 6962 cryptographic evidence, Hampel-CUSUM drift circuit breakers, poison-resistant Hybrid RRF MemoryVault, attenuated object-capabilities, stdio MCP server, and `Ullumii` / `gnosh.ai` / sovereign local GPU adapters.
 - **Tags:** `Go`, `Smart Contracts`, `AI`, `Layer 1`, `dApps`, `DeFi`
-- **GitHub Repo:** `https://github.com/PossumXI/gno-immaculate-sdk-agent-builder`
-- **Demo Video (1080p MP4, 2m 45s):** `https://github.com/PossumXI/gno-immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4`
-- **Live Web Playground:** `https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/`
-- **Public Benchmarks (Hugging Face & PageSpeed):** `https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks` · [PageSpeed 100/100/100](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop)
+- **GitHub Repo:** `https://github.com/PossumXI/immaculate-sdk-agent-builder`
+- **Demo Video (1080p MP4, 2m 45s):** `https://github.com/PossumXI/immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4`
+- **Live Web Playground:** `https://possumxi.github.io/immaculate-sdk-agent-builder/web/`
+- **Public Benchmarks (Hugging Face & PageSpeed):** `https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks` · [PageSpeed 100/100/100](https://pagespeed.web.dev/analysis/https-possumxi-github-io-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop)
 - **Website:** `https://aura-genesis.org`
 
 ---
@@ -27,7 +27,7 @@
   `gno.land/r/<namespace>/assurance`
   *(Pure library packages: `gno.land/p/<namespace>/signals` and `gno.land/p/<namespace>/assurance`. For code review, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`.)*
 - **Is this a new project, or one started before Gnome Tavern?**
-  > Brand-new Gno.land SDK, fixed-point signal assurance library, Familiar & Governed MemoryVault runtime, stdio MCP server, `gnosh.ai`/`Ullumii`/Local-GPU adapters, interactive browser verifier, and pre-registered scientific benchmark suite (E1–E5 + Live Benchmarks) built from scratch for the Gnome Tavern Hackathon.
+  > Brand-new SDK built on Gno.land: fixed-point signal assurance library, Familiar and Governed MemoryVault runtime, stdio MCP server, `gnosh.ai`/`Ullumii`/local-GPU adapters, interactive browser verifier, and pre-registered scientific benchmark suite (E1–E5 + Live Benchmarks) built from scratch for the Gnome Tavern Hackathon.
 - **On-Chain Onyx (`onyx-1`) Proof Table (for `#gnome-tavern-hackathon` `enablepkg` activation):**
   | Package / Realm | Status |
   | --- | --- |

@@ -1,5 +1,5 @@
 // Package examples provides runnable, GnoVM-tested end-to-end reference agents built
-// with the Immaculate Agent SDK Builder (gno.land/p/arobi/assurance + signals).
+// with Immaculate SDK Agent Builder (gno.land/p/arobi/assurance + signals).
 package examples
 
 import (

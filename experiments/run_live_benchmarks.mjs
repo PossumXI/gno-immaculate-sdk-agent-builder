@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live Public Benchmark Suite — Immaculate Agent SDK Builder + Arobi Whisper Agent Bus.
+ * Live Public Benchmark Suite — Immaculate SDK Agent Builder + Arobi Whisper Agent Bus.
  *
  * Measures REAL end-to-end latency, throughput, governance overhead, and on-chain gas across:
  *   1. Live Gno.land Onyx Testnet (`onyx-1`) JSON-RPC & actual deployed `addpkg` gas
@@ -263,7 +263,7 @@ const out = {
 fs.writeFileSync(path.join(__dirname, 'live_benchmarks.json'), JSON.stringify(out, null, 2) + '\n', 'utf8');
 
 const md = [
-  '# Live Public Benchmarks — Immaculate Agent SDK Builder & Arobi Whisper',
+  '# Live Public Benchmarks — Immaculate SDK Agent Builder & Arobi Whisper',
   '',
   `**Generated:** \`${out.generatedAt}\` | **Reproduce:** \`node experiments/run_live_benchmarks.mjs\``,
   '',

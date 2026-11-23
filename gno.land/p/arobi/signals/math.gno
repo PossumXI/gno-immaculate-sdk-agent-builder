@@ -1,5 +1,5 @@
 // Package signals implements consensus-safe, deterministic fixed-point statistical
-// assurance primitives in pure Gno (zero floating-point operations).
+// assurance primitives in pure fixed-point code (zero floating-point operations).
 //
 // All values use fixed-point micro-units (Scale = 1_000_000, i.e. 1.0 == 1_000_000).
 // Every primitive can emit a canonically encoded SignalEvidence record whose RFC 6962

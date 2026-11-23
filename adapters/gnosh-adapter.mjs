@@ -1,4 +1,4 @@
-// gnosh.ai Harness Adapter for Immaculate Agent SDK (Gno).
+// gnosh.ai Harness Adapter for Immaculate SDK Agent Builder.
 //
 // Consumes streamed JSON / Gno `mem` frame events emitted by gnosh (`gnosh -p`,
 // frame push/tool_call/tool_result/frame_pop) and converts every governed action into

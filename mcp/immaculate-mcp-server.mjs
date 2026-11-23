@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Immaculate Agent SDK — Zero-Dependency Model Context Protocol (MCP) Stdio Server.
+ * Immaculate SDK Agent Builder — Zero-Dependency Model Context Protocol (MCP) Stdio Server.
  *
  * Exposes Arobi Assurance governed execution, poison-resistant Familiar MemoryVault
  * (Spherical Quarantine + Overlap-Weighted Hybrid RRF k=60), standalone RFC 6962
@@ -16,7 +16,7 @@ import { UllumiiAssuranceBridge } from '../adapters/ullumii-adapter.mjs';
 import { verifyEvidenceBundle, sha256Hex } from '../verifier/verify-evidence.mjs';
 
 const SERVER_INFO = {
-  name: 'immaculate-agent-sdk-mcp',
+  name: 'immaculate-sdk-agent-mcp',
   version: '1.0.0',
 };
 

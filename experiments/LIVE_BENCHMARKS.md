@@ -1,4 +1,4 @@
-# Live Public Benchmarks — Immaculate Agent SDK Builder & Arobi Whisper
+# Live Public Benchmarks — Immaculate SDK Agent Builder & Arobi Whisper
 
 **Generated:** `2026-11-23T05:31:21.329Z` | **Reproduce:** `node experiments/run_live_benchmarks.mjs`
 
@@ -71,16 +71,16 @@ Published publicly on **Hugging Face Hub** & **Google PageSpeed Insights**:
 
 - **Hugging Face Public Dataset (JSONL):** [huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks)
 - **Hugging Face Interactive Benchmark Space:** [huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks)
-- **Live GitHub Pages Playground:** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/)
+- **Live GitHub Pages Playground:** [possumxi.github.io/immaculate-sdk-agent-builder/web/](https://possumxi.github.io/immaculate-sdk-agent-builder/web/)
 
 ### Google PageSpeed Insights (`pagespeed.web.dev`, Real Public Audits)
 
 | Project | Form Factor | Performance | Accessibility | Best Practices | SEO | FCP / LCP / TBT / CLS | Public Report |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| **Immaculate Agent SDK Builder** | Desktop | **100** | 88 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) |
-| **Immaculate Agent SDK Builder** | Mobile | **100** | 88 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=mobile) |
-| **Arobi Whisper** | Desktop | **100** | 78 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-gno-web/q338wevmo1?form_factor=desktop) |
-| **Arobi Whisper** | Mobile | **100** | 78 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-gno-web/q338wevmo1?form_factor=mobile) |
+| **Immaculate SDK Agent Builder** | Desktop | **100** | 88 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) |
+| **Immaculate SDK Agent Builder** | Mobile | **100** | 88 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=mobile) |
+| **Arobi Whisper** | Desktop | **100** | 78 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-web/q338wevmo1?form_factor=desktop) |
+| **Arobi Whisper** | Mobile | **100** | 78 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-web/q338wevmo1?form_factor=mobile) |
 
 ### Official `openai/gsm8k` (`test` Split) + 5 Adversarial Safety Probes on Live CUDA GPU
 

@@ -1,4 +1,4 @@
-# Pre-Registered Scientific Evaluation Protocol (Immaculate Agent SDK in Gno)
+# Pre-Registered Scientific Evaluation Protocol — Immaculate SDK Agent Builder
 
 **Registered:** 2026-11-23 (prior to executing `experiments/run_experiments.mjs` and publishing `RESULTS.md`)  
 **Principle:** Following the Arobi Assurance scientific discipline, every algorithmic gate in this SDK must earn its place empirically against strong baselines under a pre-registered test with fixed seeds. Any hypothesis that fails its pre-registered criterion will be reported as **FAILED / KILLED** without cherry-picking.

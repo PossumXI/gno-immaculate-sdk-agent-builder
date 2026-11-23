@@ -14,7 +14,7 @@ const (
 	DomainHarness     = "arobi-assurance-harness-frame-v1"
 )
 
-// HarnessFrame binds an external agent harness execution frame (such as a gnosh.ai Gno `mem`
+// HarnessFrame binds an external agent harness execution frame (such as a gnosh.ai `mem`
 // stack frame or an Ullumii governed work handoff / MCP tool call) into the Arobi Assurance
 // evidence spine so every frame transition is cryptographically anchored on Gno.land.
 type HarnessFrame struct {

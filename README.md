@@ -1,14 +1,41 @@
-# Immaculate Agent SDK Builder
+# Immaculate SDK Agent Builder
 
-*(Repository: `PossumXI/gno-immaculate-sdk-agent-builder` · Build Name: **Immaculate Agent SDK Builder**)*
+*(Repository: `PossumXI/immaculate-sdk-agent-builder` · Build Name: **Immaculate SDK Agent Builder**)*
 
-**Deterministic, consensus-safe autonomous agent SDK & fluent builder in Gno — implementing the Arobi Assurance Architecture with out-of-the-box RFC 6962 cryptographic evidence, fixed-point behavioral drift circuit breakers, spherical memory-poisoning gates, and attenuated multi-agent delegation anchored directly on Gno.land.**
+**Deterministic, consensus-safe autonomous agent SDK and fluent builder, built on Gno.land — implementing the Arobi Assurance Architecture with out-of-the-box RFC 6962 cryptographic evidence, fixed-point behavioral drift circuit breakers, spherical memory-poisoning gates, and attenuated multi-agent delegation.**
 
 Built by [Arobi Technology Alliance, Inc.](https://aura-genesis.org).
 
-- **1080p Demo Video (2m 45s):** [Watch / Download MP4](https://github.com/PossumXI/gno-immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4)
-- **Live Browser Playground (100/100/100 PageSpeed):** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/)
+- **1080p Demo Video (2m 45s):** [Watch / Download MP4](https://github.com/PossumXI/immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4)
+- **Live Browser Playground (100/100/100 PageSpeed):** [possumxi.github.io/immaculate-sdk-agent-builder/web/](https://possumxi.github.io/immaculate-sdk-agent-builder/web/)
 - **Public Benchmarks on Hugging Face Hub:** [Dataset (JSONL)](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks) · [Interactive Space](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks)
+
+---
+
+## Run it locally in 5 minutes
+
+Same flow as the [Gno quick start](https://docs.gno.land/builders/quickstart). `gno mod init` on current master writes `gnomod.toml` (`module` plus `gno = "0.9"`). The empty `gnowork.toml` at the repo root lets `gno test ./...` and `gnodev .` resolve the local packages and the realm together.
+
+```bash
+# 1. Install the toolchain (gno, gnokey, gnodev).
+curl -fsSL https://raw.githubusercontent.com/gnolang/gno/master/misc/install.sh | sh
+export PATH="$PATH:$HOME/.gno/bin"
+# Current master instead of the latest release:
+# curl -fsSL https://raw.githubusercontent.com/gnolang/gno/master/misc/install.sh | sh -s -- --from-source
+
+# 2. Clone and test every package and realm
+git clone https://github.com/PossumXI/immaculate-sdk-agent-builder.git
+cd immaculate-sdk-agent-builder
+gno test ./...
+
+# 3. Local chain with hot reload
+gnodev .
+# open http://localhost:8888/r/arobi/assurance
+
+# 4. Key for a testnet deploy. gnokey prints a mnemonic; store it offline.
+gnokey add dev
+gnokey list
+```
 
 ---
 
@@ -16,7 +43,7 @@ Built by [Arobi Technology Alliance, Inc.](https://aura-genesis.org).
 
 Most agent frameworks log mutable text after an action has already fired — and standard blockchain contracts rely only on static spend caps that miss stealth prompt-injection drift, break under oracle/telemetry spikes, and offer zero defense against cross-session memory poisoning.
 
-**Immaculate Agent SDK Builder** moves the entire assurance spine into **consensus-safe pure Gno (zero floating-point operations)**:
+**Immaculate SDK Agent Builder** moves the entire assurance spine on-chain, in consensus-safe fixed-point code (zero floating-point operations):
 
 1. **Evidence by Default (`gno.land/p/arobi/assurance`):** Every action passes through `PolicyInputProjection -> Fail-Closed PolicyEngine -> Single-Use EffectWarrant -> ToolHandler -> EffectClosure -> RFC 6962 / RFC 9162 Merkle Accumulator`, returning a self-verifying `EvidenceBundle` whose digests verify **bit-for-bit identically** in Gno and off-chain JavaScript.
 2. **Deterministic Fixed-Point Statistical Assurance (`gno.land/p/arobi/signals`):** Pure integer (`Scale = 1,000,000`) implementations of Arobi's scientifically measured signal primitives:
@@ -63,7 +90,7 @@ Measured against **real running systems** (reproducible via `node experiments/ru
 | **Stdio MCP Server (`mcp/immaculate-mcp-server.mjs`)** | `governed_execute` p50 `1.284 ms`, `familiar_quarantine` `0.220 ms`, `familiar_recall` `0.232 ms`, `verify_evidence` `0.357 ms` |
 | **Whisper Agent Bus Crypto (X25519 + ChaCha20-Poly1305)** | **1,209 ops/s** (256 B), **1,221 ops/s** (4 KiB), **1,104 ops/s** (16 KiB) — `100%` verified |
 | **Sovereign Local GPU (`Inkling-2-Mini-Uncensored`, MX150 CUDA + CPU MoE)** | Allowed turns `5.22–5.63` prompt / `2.14–2.18` gen tok/s; **fail-closed budget & action refusals complete in `0.76–2.28 ms` (`0.97 ms` median across 5/5 adversarial probes, `100%` GPU saved)**; `100%` RFC 6962 proofs PASS |
-| **Public Third-Party Platforms** | **Hugging Face Hub:** [Dataset](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks) & [Live Space](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks) · **Google PageSpeed Insights:** [**100 Perf / 100 BP / 100 SEO** (LCP `0.2s`, TBT `0ms`, CLS `0`)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) · **Live Playground:** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/) |
+| **Public Third-Party Platforms** | **Hugging Face Hub:** [Dataset](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks) & [Live Space](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks) · **Google PageSpeed Insights:** [**100 Perf / 100 BP / 100 SEO** (LCP `0.2s`, TBT `0ms`, CLS `0`)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) · **Live Playground:** [possumxi.github.io/immaculate-sdk-agent-builder/web/](https://possumxi.github.io/immaculate-sdk-agent-builder/web/) |
 
 ---
 
@@ -92,7 +119,7 @@ The live Onyx package and realm paths used a deployer-address namespace (`gno.la
 
 ---
 
-## Quick Start — Fluent Immaculate Agent Builder in Gno
+## Quick Start — Fluent builder
 
 ```go
 package myagent

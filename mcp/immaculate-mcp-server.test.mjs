@@ -50,7 +50,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
   const client = startMcpClient();
   try {
     const init = await client.call('initialize', { protocolVersion: '2024-11-05', clientInfo: { name: 'test', version: '1' } });
-    assert.equal(init.result.serverInfo.name, 'immaculate-agent-sdk-mcp');
+    assert.equal(init.result.serverInfo.name, 'immaculate-sdk-agent-mcp');
 
     const list = await client.call('tools/list');
     assert.equal(list.result.tools.length, 6);
