@@ -224,6 +224,80 @@ export function auditPath(m, leafHexList) {
   return [...auditPath(m - k, leafHexList.slice(k)), merkleTreeHead(leafHexList.slice(0, k))];
 }
 
+function subproof(m, leafHexList, startFromOldRoot) {
+  const n = leafHexList.length;
+  if (m === n) {
+    return startFromOldRoot ? [] : [merkleTreeHead(leafHexList)];
+  }
+  let k = 1;
+  while (k * 2 < n) k *= 2;
+  if (m <= k) {
+    return [...subproof(m, leafHexList.slice(0, k), startFromOldRoot), merkleTreeHead(leafHexList.slice(k))];
+  }
+  return [...subproof(m - k, leafHexList.slice(k), false), merkleTreeHead(leafHexList.slice(0, k))];
+}
+
+/** Generate RFC 6962 / RFC 9162 section 2.1.4.2 Merkle consistency proof between sizes first and second. */
+export function consistencyProof(first, second, leafHexList) {
+  const f = Number(first);
+  const s = Number(second);
+  if (!Number.isInteger(f) || !Number.isInteger(s) || f <= 0 || f > s || s > leafHexList.length) {
+    throw new Error(`invalid consistency proof range: first=${first} second=${second} total=${leafHexList.length}`);
+  }
+  return subproof(f, leafHexList.slice(0, s), true);
+}
+
+/** Verify RFC 6962 / RFC 9162 section 2.1.4.2 Merkle consistency proof offline. */
+export function verifyConsistencyProof(first, second, firstRootHex, secondRootHex, proofHexList) {
+  const f = BigInt(first);
+  const s = BigInt(second);
+  if (f <= 0n || f > s || !Array.isArray(proofHexList)) return false;
+  const firstRoot = fromDigestHex(firstRootHex);
+  const secondRoot = fromDigestHex(secondRootHex);
+  if (f === s) {
+    return proofHexList.length === 0 && firstRoot.equals(secondRoot);
+  }
+  if (proofHexList.length === 0) return false;
+
+  let node;
+  let idx = 0;
+  if ((f & (f - 1n)) === 0n) {
+    node = firstRoot;
+  } else {
+    node = fromDigestHex(proofHexList[0]);
+    idx = 1;
+  }
+
+  let fn = f - 1n;
+  let sn = s - 1n;
+  while ((fn & 1n) === 1n) {
+    fn >>= 1n;
+    sn >>= 1n;
+  }
+
+  let fr = node;
+  let sr = node;
+  for (; idx < proofHexList.length; idx++) {
+    if (sn === 0n) return false;
+    const c = fromDigestHex(proofHexList[idx]);
+    if ((fn & 1n) === 1n || fn === sn) {
+      fr = nodeHash(c, fr);
+      sr = nodeHash(c, sr);
+      if ((fn & 1n) === 0n) {
+        while ((fn & 1n) === 0n && fn !== 0n) {
+          fn >>= 1n;
+          sn >>= 1n;
+        }
+      }
+    } else {
+      sr = nodeHash(sr, c);
+    }
+    fn >>= 1n;
+    sn >>= 1n;
+  }
+  return sn === 0n && fr.equals(firstRoot) && sr.equals(secondRoot);
+}
+
 /** Independently verify a full EvidenceBundle exported from a Gno agent. */
 export function verifyEvidenceBundle(b) {
   const errors = [];

@@ -308,3 +308,183 @@ func (oa *OpacityAwareHampelCusumDetector) Reset() {
 	}
 	oa.ringPos, oa.ringCount, oa.ringFilled = 0, 0, 0
 }
+
+// EstimateAR1Fixed computes the fixed-point Baseline (mean, SD) and clamped lag-1 autocorrelation
+// rhoFixed in [-900000, +900000] ([-0.90, +0.90]) from a quiet reference window (n >= 10).
+// Validated in Experiment E11a (cross-referencing Arobi Labs arobi-primitives/drift.py).
+func EstimateAR1Fixed(quiet []int64) (Baseline, int64, error) {
+	base, err := BaselineFromSlice(quiet)
+	if err != nil {
+		return Baseline{}, 0, err
+	}
+	n := len(quiet)
+	var num, den int64
+	for i := 0; i < n; i++ {
+		zi := DivFixed(quiet[i]-base.MeanFixed, base.SDFixed)
+		den += MulFixed(zi, zi)
+		if i+1 < n {
+			zNext := DivFixed(quiet[i+1]-base.MeanFixed, base.SDFixed)
+			num += MulFixed(zi, zNext)
+		}
+	}
+	if den <= 0 {
+		return base, 0, nil
+	}
+	rho := DivFixed(num, den)
+	if rho > 900000 {
+		rho = 900000
+	}
+	if rho < -900000 {
+		rho = -900000
+	}
+	return base, rho, nil
+}
+
+// AR1PrewhitenedHampelCusumDetector prewhitens positively/negatively autocorrelated agent
+// telemetry streams into causal one-step AR(1) innovations after Hampel spike clamping:
+//   e_t = (z_t - rho * z_{t-1}) / sqrt(1 - rho^2)
+// Eliminates the 4x-10x false-alarm inflation suffered by white-noise CUSUM on autocorrelated
+// streams (rho in [0.5, 0.8]) while preserving spike immunity and Channel-B Opacity detection.
+type AR1PrewhitenedHampelCusumDetector struct {
+	base           Baseline
+	rhoFixed       int64
+	innovScale     int64 // sqrt(Scale^2 - rho^2) in Scale units
+	smoother       *RobustSmoother
+	cusum          *CusumDetector
+	prevZ          int64
+	hasPrevZ       bool
+	clipSigmaFixed int64
+	clipWindow     int
+	minClips       int
+	clipRing       []bool
+	ringPos        int
+	ringCount      int
+	ringFilled     int
+}
+
+func NewAR1PrewhitenedHampelCusum(
+	base Baseline,
+	rhoFixed int64,
+	hFixed, kFixed int64,
+	window int,
+	hampelKFixed int64,
+	clipSigmaFixed int64,
+	clipWindow int,
+	minClips int,
+) (*AR1PrewhitenedHampelCusumDetector, error) {
+	if rhoFixed > 900000 {
+		rhoFixed = 900000
+	}
+	if rhoFixed < -900000 {
+		rhoFixed = -900000
+	}
+	sm, err := NewRobustSmoother(window, hampelKFixed, Scale)
+	if err != nil {
+		return nil, err
+	}
+	// Standardized innovation baseline: mean = 0, SD = Scale
+	cu, err := NewCusum(Baseline{MeanFixed: 0, SDFixed: Scale}, hFixed, kFixed)
+	if err != nil {
+		return nil, err
+	}
+	oneMinusRhoSq := Scale - MulFixed(rhoFixed, rhoFixed)
+	if oneMinusRhoSq < 10000 {
+		oneMinusRhoSq = 10000
+	}
+	innovScale := SqrtFixed(oneMinusRhoSq)
+	if innovScale < 1 {
+		innovScale = 1
+	}
+	if clipSigmaFixed <= 0 {
+		clipSigmaFixed = 4 * Scale
+	}
+	if clipWindow <= 0 {
+		clipWindow = 24
+	}
+	if minClips <= 0 {
+		minClips = 3
+	}
+	return &AR1PrewhitenedHampelCusumDetector{
+		base:           base,
+		rhoFixed:       rhoFixed,
+		innovScale:     innovScale,
+		smoother:       sm,
+		cusum:          cu,
+		clipSigmaFixed: clipSigmaFixed,
+		clipWindow:     clipWindow,
+		minClips:       minClips,
+		clipRing:       make([]bool, clipWindow),
+	}, nil
+}
+
+func (ar *AR1PrewhitenedHampelCusumDetector) Update(xFixed int64) (alarm bool, stat int64, channel string, ev SignalEvidence) {
+	cleaned, replaced := ar.smoother.HampelOnly(xFixed)
+	zClean := DivFixed(cleaned-ar.base.MeanFixed, ar.base.SDFixed)
+	var innovFixed int64
+	if !ar.hasPrevZ {
+		innovFixed = zClean
+		ar.hasPrevZ = true
+	} else {
+		innovFixed = DivFixed(zClean-MulFixed(ar.rhoFixed, ar.prevZ), ar.innovScale)
+	}
+	ar.prevZ = zClean
+
+	cuAlarm, stat, ev := ar.cusum.Update(innovFixed)
+
+	zRaw := DivFixed(xFixed-ar.base.MeanFixed, ar.base.SDFixed)
+	posClip := replaced && zRaw > ar.clipSigmaFixed
+	if ar.ringFilled < ar.clipWindow {
+		ar.clipRing[ar.ringPos] = posClip
+		if posClip {
+			ar.ringCount++
+		}
+		ar.ringPos = (ar.ringPos + 1) % ar.clipWindow
+		ar.ringFilled++
+	} else {
+		if ar.clipRing[ar.ringPos] {
+			ar.ringCount--
+		}
+		ar.clipRing[ar.ringPos] = posClip
+		if posClip {
+			ar.ringCount++
+		}
+		ar.ringPos = (ar.ringPos + 1) % ar.clipWindow
+	}
+
+	opacityAlarm := ar.ringCount >= ar.minClips
+	alarm = cuAlarm || opacityAlarm
+	ev.Primitive = "signals.ar1_prewhitened_hampel_cusum"
+	ev.InputDigest = hashInt64s("in", xFixed)
+	ev.Alarm = alarm
+	switch {
+	case cuAlarm && opacityAlarm:
+		channel = "dual_ar1_cusum_and_opacity"
+		ev.Detail = "dual_ar1_drift_and_opacity_alarm"
+	case opacityAlarm:
+		channel = "opacity_innovation_channel"
+		ev.Detail = "pulsed_filter_opacity_alarm"
+	case cuAlarm:
+		channel = "ar1_cusum_channel"
+		ev.Detail = "ar1_prewhitened_cusum_alarm"
+	default:
+		channel = "none"
+		if replaced {
+			ev.Detail = "spike_clamped_no_drift"
+		} else {
+			ev.Detail = "within_bound"
+		}
+	}
+	return alarm, stat, channel, ev
+}
+
+func (ar *AR1PrewhitenedHampelCusumDetector) Statistic() int64 { return ar.cusum.Statistic() }
+func (ar *AR1PrewhitenedHampelCusumDetector) ClipCount() int   { return ar.ringCount }
+func (ar *AR1PrewhitenedHampelCusumDetector) Reset() {
+	ar.cusum.Reset()
+	ar.prevZ = 0
+	ar.hasPrevZ = false
+	for i := range ar.clipRing {
+		ar.clipRing[i] = false
+	}
+	ar.ringPos, ar.ringCount, ar.ringFilled = 0, 0, 0
+}

@@ -107,6 +107,31 @@ func (b *AgentBuilder) WithDriftGuard(base signals.Baseline, hFixed, kFixed int6
 	return b
 }
 
+// WithOpacityAwareDriftGuard attaches a Dual-Channel OpacityAwareHampelCusum behavioral drift
+// circuit breaker (Experiment E8b) that blocks both sustained +2sigma drift and periodic
+// filter-evading bursts (P > w) without degrading single-spike immunity.
+func (b *AgentBuilder) WithOpacityAwareDriftGuard(base signals.Baseline, hFixed, kFixed int64, hampelWindow int, clipSigmaFixed int64, clipWindow, minClips int, strictDeny, latchOnAlarm bool) *AgentBuilder {
+	b.WithDriftGuard(base, hFixed, kFixed, hampelWindow, strictDeny, latchOnAlarm)
+	if b.buildErr == nil && b.driftGuard != nil {
+		if err := b.driftGuard.EnableOpacityChannel(clipSigmaFixed, clipWindow, minClips); err != nil {
+			b.buildErr = err
+		}
+	}
+	return b
+}
+
+// WithAR1DriftGuard attaches an AR(1)-prewhitened + Opacity-Aware Hampel-CUSUM circuit breaker
+// (Experiment E11a) for positively/negatively autocorrelated agent telemetry streams.
+func (b *AgentBuilder) WithAR1DriftGuard(base signals.Baseline, rhoFixed, hFixed, kFixed int64, hampelWindow int, strictDeny, latchOnAlarm bool) *AgentBuilder {
+	b.WithDriftGuard(base, hFixed, kFixed, hampelWindow, strictDeny, latchOnAlarm)
+	if b.buildErr == nil && b.driftGuard != nil {
+		if err := b.driftGuard.EnableAR1Prewhitening(rhoFixed, 4*signals.Scale, 24, 3); err != nil {
+			b.buildErr = err
+		}
+	}
+	return b
+}
+
 // WithCoherenceGuard attaches a deterministic spherical context coherence gate to block memory poisoning.
 func (b *AgentBuilder) WithCoherenceGuard(thresholdFixed int64, usePairwise, strictDeny, requireOnAllCall bool) *AgentBuilder {
 	cg, err := NewCoherenceGuardPolicy(b.cfg.AgentID+"-coherence-guard", thresholdFixed, usePairwise, strictDeny, requireOnAllCall)
@@ -210,6 +235,7 @@ func (b *AgentBuilder) BuildFamiliar(
 		MinTrustedAnchors:        2,
 		HalfLifeBlocks:           1000,
 		RRFK:                     DefaultRRFK,
+		EnableColdStartGuard:     true,
 	})
 	tok := CapabilityToken{
 		ID:                1,

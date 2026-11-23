@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"gno.land/p/arobi/signals"
 	"gno.land/p/nt/uassert/v0"
 )
 
@@ -237,4 +238,61 @@ func TestFluentAgentBuilderProducesVerifiableEvidence(t *testing.T) {
 	uassert.Equal(t, "CRITICAL_RISK_DENIED", b2.Decision.ReasonCode)
 	uassert.NoError(t, b2.Verify())
 	uassert.NoError(t, ag.VerifyChain())
+}
+
+func TestAccumulatorRFC6962ConsistencyProofsAndAdaptiveOpacityAntipodalWiring(t *testing.T) {
+	var acc Accumulator
+	for i := 0; i < 16; i++ {
+		acc.Append(LeafHash([]byte("leaf-" + string(rune('a'+i)))))
+	}
+	// Verify all 1 <= first <= second <= 16 prefix pairs (136 pairs) on GnoVM!
+	for first := uint64(1); first <= 16; first++ {
+		r1, err := acc.RootAt(first)
+		uassert.NoError(t, err)
+		for second := first; second <= 16; second++ {
+			r2, err := acc.RootAt(second)
+			uassert.NoError(t, err)
+			proof, err := acc.ConsistencyProof(first, second)
+			uassert.NoError(t, err)
+			uassert.True(t, VerifyConsistency(first, second, r1, r2, proof))
+			if first < second {
+				// Forged old root or tampered proof must fail closed!
+				forged := r1
+				forged[0] ^= 0xff
+				uassert.False(t, VerifyConsistency(first, second, forged, r2, proof))
+			}
+		}
+	}
+
+	// Verify AgentBuilder WithOpacityAwareDriftGuard and EnableAntipodalSplitGuard end-to-end.
+	base := signals.Baseline{MeanFixed: 100 * signals.Scale, SDFixed: 15 * signals.Scale}
+	b := NewAgentBuilder("opacity-antipodal-agent").
+		WithPrincipal("g1principal000000000000000000000000000000").
+		AllowActions("rebalance").
+		AllowTargets("pool:1").
+		WithBudgetCap(500).
+		WithOpacityAwareDriftGuard(base, 5*signals.Scale, signals.Scale, 5, 4*signals.Scale, 24, 3, true, true).
+		WithCoherenceGuard(0, false, true, true).
+		WithTool(ToolSpec{Name: "rebalance", RiskTier: RiskLow, MaxBudgetUgnot: 500},
+			func(w EffectWarrant, input []byte) ([]byte, []byte, int64, error) {
+				return []byte("ok"), []byte("w"), w.MaxSpendUgnot, nil
+			})
+	b.CoherenceGuard().EnableAntipodalSplitGuard(-500000, 100000)
+	ag, err := b.Build()
+	uassert.NoError(t, err)
+
+	// Staged balanced antipodal split-brain context fails closed with CONTEXT_ANTIPODAL_SPLIT_DETECTED!
+	splitVecs := [][]int64{
+		{signals.Scale, 0, 0, 0},
+		{signals.Scale, 0, 0, 0},
+		{-signals.Scale, 0, 0, 0},
+		{-signals.Scale, 0, 0, 0},
+	}
+	ok, _, _, err := b.CoherenceGuard().StageContext(splitVecs)
+	uassert.NoError(t, err)
+	uassert.False(t, ok)
+	_, bSplit, err := ag.Execute("g1op", "rebalance", "pool:1", []byte("x"), nil, 100, 1)
+	uassert.Error(t, err)
+	uassert.Equal(t, "CONTEXT_ANTIPODAL_SPLIT_DETECTED", bSplit.Decision.ReasonCode)
+	uassert.NoError(t, bSplit.Verify())
 }

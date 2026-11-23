@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T21:25:18.498Z",
+  "generatedAt": "2026-11-23T21:43:41.041Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -132,29 +132,33 @@
       "p/arobi/signals::TestGeometricMedianExact180CancellationIsOrderInvariant": 13455436,
       "p/arobi/signals::TestOpacityAwareHampelCusumCatchesPeriod6DrainAndIgnoresSingleSpike": 12973192,
       "p/arobi/signals::TestCommonAverageReferenceDebiasFixedRemovesAnisotropicCone": 1088527,
-      "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65379281,
+      "p/arobi/signals::TestWildbergerRationalQuadranceSpreadYoudenAndAR1Prewhitening": 6756831,
+      "p/arobi/signals::TestBenchWildbergerRationalCosGate100PairsGas": 21425899,
+      "p/arobi/signals::TestBenchClassicalUnitNormalizeCos100PairsGas": 41781999,
+      "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65430602,
       "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
       "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
       "p/arobi/assurance::TestAccumulatorRFC6962ProofsAndTamperRejection": 10632310,
       "p/arobi/assurance::TestGovernedAgentLifecycleProducesVerifiableEvidenceOutOfTheBox": 12771854,
       "p/arobi/assurance::TestFailClosedKillSwitchOverspendAndTamperDetection": 4579478,
       "p/arobi/assurance::TestFluentAgentBuilderProducesVerifiableEvidence": 5922320,
+      "p/arobi/assurance::TestAccumulatorRFC6962ConsistencyProofsAndAdaptiveOpacityAntipodalWiring": 120810591,
       "p/arobi/assurance::TestBenchSingleGovernedActionGas": 2659102,
-      "p/arobi/assurance::TestBenchAdaptiveDriftAndCoherenceSingleActionGas": 4971378,
+      "p/arobi/assurance::TestBenchAdaptiveDriftAndCoherenceSingleActionGas": 4975412,
       "p/arobi/assurance::TestBenchAccumulatorScale10": 1462219,
       "p/arobi/assurance::TestBenchAccumulatorScale50": 6105853,
       "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
       "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
       "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
       "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9930790,
-      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 14021212,
-      "p/arobi/assurance::TestMemoryVaultGeometricMedianBatchPurgeAndTrustAutoHalt": 11910071,
+      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 14025748,
+      "p/arobi/assurance::TestMemoryVaultGeometricMedianBatchPurgeAndTrustAutoHalt": 11910199,
       "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14548452,
       "p/arobi/assurance::TestMemoryVaultColdStartGenesisAnchorAndAnisotropicCARDebiasing": 9361888,
       "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56365756,
-      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 11152124,
-      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42423720,
-      "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29540006,
+      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 11153716,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42529895,
+      "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29564210,
       "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
     },
     "accumulatorScaling": [
@@ -181,7 +185,7 @@
     ],
     "singleActionGas": {
       "governedActionWithProofs": 2659102,
-      "adaptiveDriftAndCoherenceAction": 4971378,
+      "adaptiveDriftAndCoherenceAction": 4975412,
       "familiarMemoryAndCapability": 14548452
     },
     "verdicts": {
@@ -358,6 +362,56 @@
     },
     "verdicts": {
       "H9_car_debiasing_rescues_anisotropic_quarantine_and_recall": "PASS"
+    }
+  },
+  "E10_wildbergerRationalQuadrance": {
+    "pairsEvaluated": 1000,
+    "thresholdChecks": 4000,
+    "float64DecisionAgreement_pct": 100,
+    "maxSpreadAbsError": 0.000002377,
+    "gnovm100PairsGas": {
+      "classicalUnitNormalizeCosGas": 41781999,
+      "wildbergerRationalCosGateGas": 21425899,
+      "gasReduction_pct": 48.72
+    },
+    "verdicts": {
+      "H10a_rational_gate_matches_float64_ge_99_9pct": "PASS",
+      "H10b_real_gnovm_gas_reduction_ge_25pct": "PASS"
+    }
+  },
+  "E11_ar1PrewhiteningAndYoudenCalibration": {
+    "episodes": 300,
+    "lag1Rho": 0.7,
+    "WhiteNoiseHampelCusum": {
+      "ar1CleanFPR_pct": 42,
+      "singleSpike10SigmaFPR_pct": 42.3,
+      "shift25SigmaTPR_pct": 100
+    },
+    "AR1PrewhitenedHampelCusum": {
+      "ar1CleanFPR_pct": 5.7,
+      "singleSpike10SigmaFPR_pct": 5.3,
+      "shift25SigmaTPR_pct": 98.3
+    },
+    "youdenAndRocAucFidelity200": {
+      "maxYoudenJAbsError": 1.11e-16,
+      "maxRocAucAbsError": 0
+    },
+    "verdicts": {
+      "H11a_ar1_prewhitening_cuts_clean_fpr_ge_70pct_and_keeps_shift_tpr_ge_95pct": "PASS",
+      "H11b_youden_j_and_roc_auc_mae_lt_1e5": "PASS"
+    }
+  },
+  "E12_rfc6962ConsistencyProofs": {
+    "exhaustivePrefixPairs1To64": 2080,
+    "validProofsVerified": 2080,
+    "tamperedProofsRejected": 2080,
+    "maxProofHashesAt64": 7,
+    "largeTransition103To250": {
+      "proofHashes": 9,
+      "verified": true
+    },
+    "verdicts": {
+      "H12a_100pct_rfc6962_consistency_proof_verification_and_tamper_rejection": "PASS"
     }
   }
 }

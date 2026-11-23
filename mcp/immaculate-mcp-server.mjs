@@ -19,7 +19,13 @@ import {
   buildGnoshPeersPlanGno,
 } from '../adapters/gnosh-adapter.mjs';
 import { UllumiiAssuranceBridge } from '../adapters/ullumii-adapter.mjs';
-import { verifyEvidenceBundle, sha256Hex } from '../verifier/verify-evidence.mjs';
+import {
+  verifyEvidenceBundle,
+  consistencyProof,
+  verifyConsistencyProof,
+  merkleTreeHead,
+  sha256Hex,
+} from '../verifier/verify-evidence.mjs';
 
 const SERVER_INFO = {
   name: 'immaculate-sdk-agent-mcp',
@@ -208,6 +214,21 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'verify_consistency_proof',
+    description: 'Generate or verify an RFC 6962 / RFC 9162 section 2.1.4.2 logarithmic Merkle consistency proof between two accumulator tree sizes.',
+    inputSchema: {
+      type: 'object',
+      required: ['firstSize', 'secondSize'],
+      properties: {
+        firstSize: { type: 'number' },
+        secondSize: { type: 'number' },
+        firstRootHex: { type: 'string' },
+        secondRootHex: { type: 'string' },
+        proofHexList: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args = {}) {
@@ -379,6 +400,29 @@ function handleToolCall(name, args = {}) {
         ...args,
         warrantRootHex: latest ? latest.accumulatorRoot : '',
       });
+    }
+
+    case 'verify_consistency_proof': {
+      const first = Number(args.firstSize);
+      const second = Number(args.secondSize);
+      if (Array.isArray(args.proofHexList) && args.firstRootHex && args.secondRootHex) {
+        const verified = verifyConsistencyProof(first, second, args.firstRootHex, args.secondRootHex, args.proofHexList);
+        return { firstSize: first, secondSize: second, verified, proofLength: args.proofHexList.length };
+      }
+      const leaves = state.session.leaves;
+      const firstRootHex = merkleTreeHead(leaves.slice(0, first));
+      const secondRootHex = merkleTreeHead(leaves.slice(0, second));
+      const proof = consistencyProof(first, second, leaves);
+      const verified = verifyConsistencyProof(first, second, firstRootHex, secondRootHex, proof);
+      return {
+        firstSize: first,
+        secondSize: second,
+        firstRootHex,
+        secondRootHex,
+        proofHexList: proof,
+        proofLength: proof.length,
+        verified,
+      };
     }
 
     default:

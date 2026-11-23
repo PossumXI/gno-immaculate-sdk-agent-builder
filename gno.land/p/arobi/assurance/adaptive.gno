@@ -28,6 +28,8 @@ type DriftGuardPolicy struct {
 
 	latched    bool
 	hc         *signals.HampelCusumDetector
+	oa         *signals.OpacityAwareHampelCusumDetector
+	ar1        *signals.AR1PrewhitenedHampelCusumDetector
 	raw        *signals.CusumDetector
 	lastEv     signals.SignalEvidence
 	hasLastEv  bool
@@ -124,7 +126,11 @@ func (p *DriftGuardPolicy) Evaluate(in PolicyInputProjection) PolicyDecision {
 		stat  int64
 		ev    signals.SignalEvidence
 	)
-	if p.hc != nil {
+	if p.ar1 != nil {
+		alarm, stat, _, ev = p.ar1.Update(xFixed)
+	} else if p.oa != nil {
+		alarm, stat, _, ev = p.oa.Update(xFixed)
+	} else if p.hc != nil {
 		alarm, stat, _, ev = p.hc.Update(xFixed)
 	} else if p.raw != nil {
 		alarm, stat, ev = p.raw.Update(xFixed)
@@ -163,9 +169,53 @@ func (p *DriftGuardPolicy) Evaluate(in PolicyInputProjection) PolicyDecision {
 	}
 }
 
+// EnableOpacityChannel upgrades a Hampel-CUSUM DriftGuardPolicy to Dual-Channel
+// OpacityAwareHampelCusumDetector (Experiment E8b) to block periodic filter-evading bursts.
+func (p *DriftGuardPolicy) EnableOpacityChannel(clipSigmaFixed int64, clipWindow, minClips int) error {
+	w := p.HampelWindow
+	if w < 2 {
+		w = 5
+	}
+	hk := p.HampelKFixed
+	if hk <= 0 {
+		hk = 3 * signals.Scale
+	}
+	oa, err := signals.NewOpacityAwareHampelCusum(p.Base, p.HFixed, p.KFixed, w, hk, clipSigmaFixed, clipWindow, minClips)
+	if err != nil {
+		return err
+	}
+	p.oa = oa
+	return nil
+}
+
+// EnableAR1Prewhitening upgrades a DriftGuardPolicy to AR1PrewhitenedHampelCusumDetector
+// (Experiment E11a) for autocorrelated telemetry streams (rhoFixed in [-900000, +900000]).
+func (p *DriftGuardPolicy) EnableAR1Prewhitening(rhoFixed, clipSigmaFixed int64, clipWindow, minClips int) error {
+	w := p.HampelWindow
+	if w < 2 {
+		w = 5
+	}
+	hk := p.HampelKFixed
+	if hk <= 0 {
+		hk = 3 * signals.Scale
+	}
+	ar1, err := signals.NewAR1PrewhitenedHampelCusum(p.Base, rhoFixed, p.HFixed, p.KFixed, w, hk, clipSigmaFixed, clipWindow, minClips)
+	if err != nil {
+		return err
+	}
+	p.ar1 = ar1
+	return nil
+}
+
 // Reset clears a latched circuit breaker and zeroes the CUSUM accumulator (principal action).
 func (p *DriftGuardPolicy) Reset() {
 	p.latched = false
+	if p.ar1 != nil {
+		p.ar1.Reset()
+	}
+	if p.oa != nil {
+		p.oa.Reset()
+	}
 	if p.hc != nil {
 		p.hc.Reset()
 	}
@@ -178,6 +228,12 @@ func (p *DriftGuardPolicy) Latched() bool                       { return p.latch
 func (p *DriftGuardPolicy) AlarmCount() uint64                  { return p.alarmCount }
 func (p *DriftGuardPolicy) LastEvidence() (signals.SignalEvidence, bool) { return p.lastEv, p.hasLastEv }
 func (p *DriftGuardPolicy) Statistic() int64 {
+	if p.ar1 != nil {
+		return p.ar1.Statistic()
+	}
+	if p.oa != nil {
+		return p.oa.Statistic()
+	}
 	if p.hc != nil {
 		return p.hc.Statistic()
 	}
@@ -193,17 +249,21 @@ func (p *DriftGuardPolicy) Statistic() int64 {
 // Prevents cross-session memory poisoning and context-injection attacks: if a pending
 // context batch scores below ThresholdFixed, execution fails closed before side effects.
 type CoherenceGuardPolicy struct {
-	PolicyID         string
-	ThresholdFixed   int64
-	UsePairwise      bool
-	StrictDeny       bool
-	RequireOnAllCall bool // if true, missing context vectors fails closed
+	PolicyID                 string
+	ThresholdFixed           int64
+	UsePairwise              bool
+	StrictDeny               bool
+	RequireOnAllCall         bool // if true, missing context vectors fails closed
+	CheckAntipodal           bool // if true, also runs AntipodalSplitGate (Experiment E7b)
+	AntipodalNegThreshFixed  int64
+	AntipodalMaxFracFixed    int64
 
-	hasPending bool
-	pendingOk  bool
-	pendingSc  int64
-	lastEv     signals.SignalEvidence
-	hasLastEv  bool
+	hasPending       bool
+	pendingOk        bool
+	pendingSc        int64
+	pendingAntipodal bool
+	lastEv           signals.SignalEvidence
+	hasLastEv        bool
 }
 
 func NewCoherenceGuardPolicy(policyID string, thresholdFixed int64, usePairwise, strictDeny, requireOnAllCall bool) (*CoherenceGuardPolicy, error) {
@@ -222,6 +282,21 @@ func NewCoherenceGuardPolicy(policyID string, thresholdFixed int64, usePairwise,
 	}, nil
 }
 
+// EnableAntipodalSplitGuard activates balanced 180-degree split-brain detection alongside
+// spherical coherence (Experiment E7b).
+func (c *CoherenceGuardPolicy) EnableAntipodalSplitGuard(negThreshFixed, maxFracFixed int64) *CoherenceGuardPolicy {
+	if negThreshFixed == 0 {
+		negThreshFixed = -500000
+	}
+	if maxFracFixed <= 0 {
+		maxFracFixed = 100000
+	}
+	c.CheckAntipodal = true
+	c.AntipodalNegThreshFixed = negThreshFixed
+	c.AntipodalMaxFracFixed = maxFracFixed
+	return c
+}
+
 // StageContext evaluates contextVectors deterministically and stages the result for the next Execute().
 func (c *CoherenceGuardPolicy) StageContext(vectors [][]int64) (bool, int64, signals.SignalEvidence, error) {
 	ok, score, ev, err := signals.CoherenceGate(vectors, c.ThresholdFixed, c.UsePairwise)
@@ -229,11 +304,30 @@ func (c *CoherenceGuardPolicy) StageContext(vectors [][]int64) (bool, int64, sig
 		c.hasPending = true
 		c.pendingOk = false
 		c.pendingSc = 0
+		c.pendingAntipodal = false
 		return false, 0, signals.SignalEvidence{}, err
+	}
+	antipodalAlarm := false
+	if c.CheckAntipodal {
+		aOk, aFrac, aEv, aErr := signals.AntipodalSplitGate(vectors, c.AntipodalNegThreshFixed, c.AntipodalMaxFracFixed)
+		if aErr != nil {
+			c.hasPending = true
+			c.pendingOk = false
+			c.pendingSc = 0
+			c.pendingAntipodal = false
+			return false, 0, signals.SignalEvidence{}, aErr
+		}
+		if !aOk {
+			ok = false
+			antipodalAlarm = true
+			score = aFrac
+			ev = aEv
+		}
 	}
 	c.hasPending = true
 	c.pendingOk = ok
 	c.pendingSc = score
+	c.pendingAntipodal = antipodalAlarm
 	c.lastEv = ev
 	c.hasLastEv = true
 	return ok, score, ev, nil
@@ -273,9 +367,11 @@ func (c *CoherenceGuardPolicy) Evaluate(in PolicyInputProjection) PolicyDecision
 	staged := c.hasPending
 	ok := c.pendingOk
 	score := c.pendingSc
+	antipodal := c.pendingAntipodal
 	c.hasPending = false
 	c.pendingOk = false
 	c.pendingSc = 0
+	c.pendingAntipodal = false
 
 	if !staged {
 		if c.RequireOnAllCall {
@@ -298,6 +394,15 @@ func (c *CoherenceGuardPolicy) Evaluate(in PolicyInputProjection) PolicyDecision
 	}
 
 	if !ok {
+		if antipodal {
+			return PolicyDecision{
+				Verdict:      verdict,
+				PolicyID:     c.ID(),
+				PolicyDigest: d,
+				ReasonCode:   "CONTEXT_ANTIPODAL_SPLIT_DETECTED",
+				Reason:       "antipodal pair fraction " + strconv.FormatInt(score, 10) + " exceeded split-brain threshold",
+			}
+		}
 		return PolicyDecision{
 			Verdict:      verdict,
 			PolicyID:     c.ID(),

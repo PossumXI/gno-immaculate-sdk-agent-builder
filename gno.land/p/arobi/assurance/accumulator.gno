@@ -213,3 +213,82 @@ func splitPoint(n int) int {
 	}
 	return k
 }
+
+// ConsistencyProof generates an RFC 6962 / RFC 9162 section 2.1.4.2 logarithmic Merkle
+// consistency proof (SUBPROOF) showing that the first `first` leaves form an exact
+// append-only prefix of the first `second` leaves.
+func (a *Accumulator) ConsistencyProof(first, second uint64) ([][32]byte, error) {
+	if first == 0 || first > second || second > uint64(len(a.leaves)) {
+		return nil, errProofRange
+	}
+	return subproof(int(first), a.leaves[:second], true), nil
+}
+
+func subproof(m int, leaves [][32]byte, startFromOldRoot bool) [][32]byte {
+	n := len(leaves)
+	if m == n {
+		if startFromOldRoot {
+			return nil
+		}
+		return [][32]byte{mth(leaves)}
+	}
+	k := splitPoint(n)
+	if m <= k {
+		return append(subproof(m, leaves[:k], startFromOldRoot), mth(leaves[k:]))
+	}
+	return append(subproof(m-k, leaves[k:], false), mth(leaves[:k]))
+}
+
+// VerifyConsistency verifies an RFC 6962 / RFC 9162 section 2.1.4.2 Merkle consistency
+// proof between tree sizes `first` (with root `firstRoot`) and `second` (with root `secondRoot`).
+func VerifyConsistency(first, second uint64, firstRoot, secondRoot [32]byte, proof [][32]byte) bool {
+	if first == 0 || first > second {
+		return false
+	}
+	if first == second {
+		return len(proof) == 0 && firstRoot == secondRoot
+	}
+	if len(proof) == 0 {
+		return false
+	}
+
+	var node [32]byte
+	idx := 0
+	if (first & (first - 1)) == 0 {
+		node = firstRoot
+	} else {
+		node = proof[0]
+		idx = 1
+	}
+
+	fn := first - 1
+	sn := second - 1
+	for (fn & 1) == 1 {
+		fn >>= 1
+		sn >>= 1
+	}
+
+	fr := node
+	sr := node
+	for ; idx < len(proof); idx++ {
+		if sn == 0 {
+			return false
+		}
+		c := proof[idx]
+		if (fn&1) == 1 || fn == sn {
+			fr = NodeHash(c, fr)
+			sr = NodeHash(c, sr)
+			if (fn & 1) == 0 {
+				for (fn&1) == 0 && fn != 0 {
+					fn >>= 1
+					sn >>= 1
+				}
+			}
+		} else {
+			sr = NodeHash(sr, c)
+		}
+		fn >>= 1
+		sn >>= 1
+	}
+	return sn == 0 && fr == firstRoot && sr == secondRoot
+}

@@ -26,6 +26,8 @@ import {
   effectClosureLeafHash,
   merkleTreeHead,
   auditPath,
+  consistencyProof,
+  verifyConsistencyProof,
   verifyEvidenceBundle,
 } from '../verifier/verify-evidence.mjs';
 
@@ -1702,6 +1704,315 @@ function runE9() {
   };
 }
 
+// ── Experiment E10: Wildberger Rational Trigonometry (Zero-ISqrt64 Quadrance & Spread) ──
+function runE10(e3) {
+  const rng = makeRng(20261123 + 1010);
+  const PAIRS = 1000;
+  const DIM = 16;
+  const thresholds = [-0.50, 0.3025, 0.55, 0.75];
+
+  function signedQuadranceCosSqFixedJS(u, v) {
+    let maxAbs = 0n;
+    for (let i = 0; i < u.length; i++) {
+      const au = absB(u[i]);
+      const av = absB(v[i]);
+      if (au > maxAbs) maxAbs = au;
+      if (av > maxAbs) maxAbs = av;
+    }
+    let shift = 0n;
+    while ((maxAbs >> shift) > 1000000n) shift++;
+    let dot = 0n, qu = 0n, qv = 0n;
+    for (let i = 0; i < u.length; i++) {
+      const ui = u[i] >> shift;
+      const vi = v[i] >> shift;
+      dot += ui * vi;
+      qu += absB(ui) * absB(ui);
+      qv += absB(vi) * absB(vi);
+    }
+    if (dot === 0n) return 0n;
+    let absDot = absB(dot);
+    let qMax = qu >= qv ? qu : qv;
+    let qMin = qu >= qv ? qv : qu;
+    while (qMax > 100000000000n) {
+      absDot >>= 1n;
+      qMax >>= 1n;
+      qMin >>= 1n;
+    }
+    if (qMin === 0n) return 0n;
+    const ratio1 = (absDot * 10000000n) / qMax;
+    let c2 = (ratio1 * absDot) / (qMin * 10n);
+    if (c2 > SCALE) c2 = SCALE;
+    return dot < 0n ? -c2 : c2;
+  }
+
+  let totalChecks = 0;
+  let exactMatches = 0;
+  let maxSpreadErr = 0;
+
+  for (let p = 0; p < PAIRS; p++) {
+    const uF = Array.from({ length: DIM }, () => rng.randn() * 5.0);
+    const vF = Array.from({ length: DIM }, () => rng.randn() * 5.0);
+    const uB = uF.map((x) => toFixed(x));
+    const vB = vF.map((x) => toFixed(x));
+
+    const dotF = uF.reduce((s, x, i) => s + x * vF[i], 0);
+    const nuF = Math.sqrt(uF.reduce((s, x) => s + x * x, 0));
+    const nvF = Math.sqrt(vF.reduce((s, x) => s + x * x, 0));
+    const cosF = dotF / (nuF * nvF);
+    const spreadF = 1 - cosF * cosF;
+
+    const c2B = signedQuadranceCosSqFixedJS(uB, vB);
+    const spreadB = Number(SCALE - absB(c2B)) / 1e6;
+    maxSpreadErr = Math.max(maxSpreadErr, Math.abs(spreadF - spreadB));
+
+    for (const tau of thresholds) {
+      totalChecks++;
+      const tauB = toFixed(tau);
+      let tauSqB = mulFixed(absB(tauB), absB(tauB));
+      if (tauB < 0n) tauSqB = -tauSqB;
+      const decisionRational = c2B >= tauSqB;
+      const decisionFloat = cosF >= tau;
+      if (decisionRational === decisionFloat) exactMatches++;
+    }
+  }
+
+  const agreementPct = Number(((100 * exactMatches) / totalChecks).toFixed(2));
+  const rationalGas = e3.gasByTest['p/arobi/signals::TestBenchWildbergerRationalCosGate100PairsGas'] || 0;
+  const classicalGas = e3.gasByTest['p/arobi/signals::TestBenchClassicalUnitNormalizeCos100PairsGas'] || 0;
+  const gasSavingsPct = classicalGas > 0 ? Number(((100 * (classicalGas - rationalGas)) / classicalGas).toFixed(2)) : 0;
+
+  return {
+    pairsEvaluated: PAIRS,
+    thresholdChecks: totalChecks,
+    float64DecisionAgreement_pct: agreementPct,
+    maxSpreadAbsError: Number(maxSpreadErr.toExponential(3)),
+    gnovm100PairsGas: {
+      classicalUnitNormalizeCosGas: classicalGas,
+      wildbergerRationalCosGateGas: rationalGas,
+      gasReduction_pct: gasSavingsPct,
+    },
+    verdicts: {
+      H10a_rational_gate_matches_float64_ge_99_9pct: agreementPct >= 99.9 ? 'PASS' : 'FAIL',
+      H10b_real_gnovm_gas_reduction_ge_25pct: gasSavingsPct >= 25.0 ? 'PASS' : 'FAIL',
+    },
+  };
+}
+
+// ── Experiment E11: Autocorrelated AR(1) Telemetry Prewhitening & Youden-J Calibration ──
+function runE11() {
+  const rng = makeRng(20261123 + 1111);
+  const STEPS = 60;
+  const EPISODES = 300;
+  const RHO = 0.70;
+  const MEAN = 100;
+  const SD = 15;
+  const INNOV_SD = Math.sqrt(1 - RHO * RHO);
+
+  function genAR1Stream(shiftAt = -1, shiftSigma = 0, spikeAt = -1, spikeSigma = 0) {
+    const out = [];
+    let z = rng.randn();
+    for (let t = 0; t < STEPS; t++) {
+      if (t > 0) z = RHO * z + INNOV_SD * rng.randn();
+      let val = MEAN + SD * z;
+      if (shiftAt >= 0 && t >= shiftAt) val += shiftSigma * SD;
+      if (spikeAt >= 0 && t === spikeAt) val += spikeSigma * SD;
+      out.push(val);
+    }
+    return out;
+  }
+
+  function hampelStep(buf, x, window = 5, k = 3.0) {
+    if (buf.length === 0) for (let i = 0; i < window; i++) buf.push(x);
+    else { buf.shift(); buf.push(x); }
+    const s = [...buf].sort((a, b) => a - b);
+    const med = s[window >> 1];
+    const devs = buf.map((v) => Math.abs(v - med)).sort((a, b) => a - b);
+    const mad = Math.max(1e-6, 1.4826 * devs[window >> 1]);
+    return Math.abs(x - med) > k * mad ? med : x;
+  }
+
+  // Calibrate standard white-noise HampelCusum threshold on i.i.d. quiet streams (rho = 0)
+  const iidQuiet = Array.from({ length: 400 }, () => Array.from({ length: STEPS }, () => MEAN + SD * rng.randn()));
+  const iidMax = iidQuiet
+    .map((st) => {
+      const hbuf = [];
+      let cu = 0, mx = 0;
+      for (const x of st) {
+        const hx = hampelStep(hbuf, x);
+        cu = Math.max(0, cu + (hx - MEAN) / SD - 1.0);
+        mx = Math.max(mx, cu);
+      }
+      return mx;
+    })
+    .sort((a, b) => a - b);
+  const hThresh = iidMax[Math.floor(0.95 * iidMax.length)];
+
+  function evalAR1Stream(st, prewhiten) {
+    const hbuf = [];
+    let cu = 0;
+    let prevZ = null;
+    for (let t = 0; t < st.length; t++) {
+      const hx = hampelStep(hbuf, st[t]);
+      const z = (hx - MEAN) / SD;
+      let sample = z;
+      if (prewhiten) {
+        sample = prevZ === null ? z : (z - RHO * prevZ) / INNOV_SD;
+        prevZ = z;
+      }
+      cu = Math.max(0, cu + sample - 1.0);
+      if (cu > hThresh) return true;
+    }
+    return false;
+  }
+
+  let wnCleanFPR = 0, wnSpikeFPR = 0, wnShiftTPR = 0;
+  let arCleanFPR = 0, arSpikeFPR = 0, arShiftTPR = 0;
+
+  for (let e = 0; e < EPISODES; e++) {
+    const cleanSt = genAR1Stream();
+    if (evalAR1Stream(cleanSt, false)) wnCleanFPR++;
+    if (evalAR1Stream(cleanSt, true)) arCleanFPR++;
+
+    const spikeSt = [...cleanSt];
+    spikeSt[18] += 10 * SD;
+    if (evalAR1Stream(spikeSt, false)) wnSpikeFPR++;
+    if (evalAR1Stream(spikeSt, true)) arSpikeFPR++;
+
+    const shiftSt = cleanSt.map((v, t) => (t >= 20 ? v + 2.5 * SD : v));
+    if (evalAR1Stream(shiftSt, false)) wnShiftTPR++;
+    if (evalAR1Stream(shiftSt, true)) arShiftTPR++;
+  }
+
+  // Part E11b: Fixed-point Youden-J & ROC-AUC fidelity across 200 score batches
+  let maxJErr = 0, maxAucErr = 0;
+  for (let b = 0; b < 200; b++) {
+    const cleanF = Array.from({ length: 25 }, () => 0.65 + 0.15 * rng.randn());
+    const attackF = Array.from({ length: 25 }, () => 0.30 + 0.18 * rng.randn());
+    const cleanB = cleanF.map((x) => toFixed(x));
+    const attackB = attackF.map((x) => toFixed(x));
+
+    // Float64 reference
+    let halfWinsF = 0;
+    for (const c of cleanF) for (const a of attackF) {
+      if (c > a) halfWinsF += 2;
+      else if (c === a) halfWinsF += 1;
+    }
+    const aucF = halfWinsF / (2 * cleanF.length * attackF.length);
+
+    let halfWinsB = 0n;
+    for (const c of cleanB) for (const a of attackB) {
+      if (c > a) halfWinsB += 2n;
+      else if (c === a) halfWinsB += 1n;
+    }
+    const aucB = Number((halfWinsB * SCALE) / BigInt(2 * cleanB.length * attackB.length)) / 1e6;
+    maxAucErr = Math.max(maxAucErr, Math.abs(aucF - aucB));
+
+    let bestJF = -2, bestJB = -2n * SCALE;
+    for (const tF of [...cleanF, ...attackF]) {
+      const tpr = cleanF.filter((x) => x >= tF).length / cleanF.length;
+      const fpr = attackF.filter((x) => x >= tF).length / attackF.length;
+      if (tpr - fpr > bestJF) bestJF = tpr - fpr;
+    }
+    for (const tB of [...cleanB, ...attackB]) {
+      const tprB = (BigInt(cleanB.filter((x) => x >= tB).length) * SCALE) / BigInt(cleanB.length);
+      const fprB = (BigInt(attackB.filter((x) => x >= tB).length) * SCALE) / BigInt(attackB.length);
+      if (tprB - fprB > bestJB) bestJB = tprB - fprB;
+    }
+    maxJErr = Math.max(maxJErr, Math.abs(bestJF - Number(bestJB) / 1e6));
+  }
+
+  const wnCleanPct = Number(((100 * wnCleanFPR) / EPISODES).toFixed(1));
+  const arCleanPct = Number(((100 * arCleanFPR) / EPISODES).toFixed(1));
+  const wnSpikePct = Number(((100 * wnSpikeFPR) / EPISODES).toFixed(1));
+  const arSpikePct = Number(((100 * arSpikeFPR) / EPISODES).toFixed(1));
+  const wnShiftPct = Number(((100 * wnShiftTPR) / EPISODES).toFixed(1));
+  const arShiftPct = Number(((100 * arShiftTPR) / EPISODES).toFixed(1));
+
+  return {
+    episodes: EPISODES,
+    lag1Rho: RHO,
+    WhiteNoiseHampelCusum: {
+      ar1CleanFPR_pct: wnCleanPct,
+      singleSpike10SigmaFPR_pct: wnSpikePct,
+      shift25SigmaTPR_pct: wnShiftPct,
+    },
+    AR1PrewhitenedHampelCusum: {
+      ar1CleanFPR_pct: arCleanPct,
+      singleSpike10SigmaFPR_pct: arSpikePct,
+      shift25SigmaTPR_pct: arShiftPct,
+    },
+    youdenAndRocAucFidelity200: {
+      maxYoudenJAbsError: Number(maxJErr.toExponential(3)),
+      maxRocAucAbsError: Number(maxAucErr.toExponential(3)),
+    },
+    verdicts: {
+      H11a_ar1_prewhitening_cuts_clean_fpr_ge_70pct_and_keeps_shift_tpr_ge_95pct:
+        wnCleanPct >= 35 && arCleanPct <= wnCleanPct * 0.3 && arCleanPct <= 10 && arShiftPct >= 95 && arSpikePct <= 10
+          ? 'PASS'
+          : 'FAIL',
+      H11b_youden_j_and_roc_auc_mae_lt_1e5:
+        maxJErr < 1e-5 && maxAucErr < 1e-5 ? 'PASS' : 'FAIL',
+    },
+  };
+}
+
+// ── Experiment E12: RFC 6962 / RFC 9162 §2.1.4.2 Logarithmic Merkle Consistency Proofs ──
+function runE12() {
+  const MAX_N = 64;
+  const leaves = Array.from({ length: 250 }, (_, i) => sha256Hex(`consistency-leaf-${i}`));
+  const roots = new Map();
+  for (let n = 1; n <= 64; n++) {
+    roots.set(n, merkleTreeHead(leaves.slice(0, n)));
+  }
+  roots.set(250, merkleTreeHead(leaves));
+
+  let pairsChecked = 0;
+  let validPassed = 0;
+  let tamperedRejected = 0;
+  let maxProofLen64 = 0;
+
+  for (let first = 1; first <= MAX_N; first++) {
+    const r1 = roots.get(first);
+    for (let second = first; second <= MAX_N; second++) {
+      pairsChecked++;
+      const r2 = roots.get(second);
+      const proof = consistencyProof(first, second, leaves);
+      if (proof.length > maxProofLen64) maxProofLen64 = proof.length;
+      if (verifyConsistencyProof(first, second, r1, r2, proof)) validPassed++;
+
+      if (first < second) {
+        const badRoot = (r1[0] === 'a' ? 'b' : 'a') + r1.slice(1);
+        if (!verifyConsistencyProof(first, second, badRoot, r2, proof)) tamperedRejected++;
+      } else {
+        if (!verifyConsistencyProof(first, second, r1, r2, [r1])) tamperedRejected++;
+      }
+    }
+  }
+
+  // Also test large tree transition N1 = 103 -> N2 = 250
+  const r103 = merkleTreeHead(leaves.slice(0, 103));
+  const r250 = roots.get(250);
+  const p250 = consistencyProof(103, 250, leaves);
+  const ok250 = verifyConsistencyProof(103, 250, r103, r250, p250);
+
+  return {
+    exhaustivePrefixPairs1To64: pairsChecked,
+    validProofsVerified: validPassed,
+    tamperedProofsRejected: tamperedRejected,
+    maxProofHashesAt64: maxProofLen64,
+    largeTransition103To250: {
+      proofHashes: p250.length,
+      verified: ok250,
+    },
+    verdicts: {
+      H12a_100pct_rfc6962_consistency_proof_verification_and_tamper_rejection:
+        validPassed === pairsChecked && tamperedRejected === pairsChecked && ok250 && p250.length <= 17
+          ? 'PASS'
+          : 'FAIL',
+    },
+  };
+}
+
 // ── Main Execution ──────────────────────────────────────────────────────────
 const { gnoGolden, e3 } = runE3AndExtractGolden();
 const e1 = runE1(gnoGolden);
@@ -1712,6 +2023,9 @@ const e6 = runE6();
 const e7 = runE7();
 const e8 = runE8();
 const e9 = runE9();
+const e10 = runE10(e3);
+const e11 = runE11();
+const e12 = runE12();
 
 const results = {
   generatedAt: new Date().toISOString(),
@@ -1725,6 +2039,9 @@ const results = {
   E7_antipodalSymmetryAndMedoidInit: e7,
   E8_filterOpacityPulsedAttacks: e8,
   E9_anisotropicCommonConeCAR: e9,
+  E10_wildbergerRationalQuadrance: e10,
+  E11_ar1PrewhiteningAndYoudenCalibration: e11,
+  E12_rfc6962ConsistencyProofs: e12,
 };
 
 fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(results, null, 2) + '\n', 'utf8');
@@ -1759,6 +2076,11 @@ const md = [
   `| **H7b** Cross-Ref: Antipodal Split-Brain Guard | >= 95% split-brain TPR at 0% clean FPR | **${e7.verdicts.H7b_antipodal_split_brain_detection_ge_95pct_at_0pct_fpr}** |`,
   `| **H8b** Cross-Ref: Filter Opacity (Period-6 \`P > w=5\` Drain) | >= 95% pulsed-6 TPR (+50 pts over HampelCusum v1) with <= 6.5% spike FPR & <= +1% clean FPR | **${e8.verdicts.H8b_opacity_aware_closes_period6_hampel_blindspot_without_spike_regression}** |`,
   `| **H9** Arobi Labs: Anisotropic Common-Cone CAR | >= +40 pts quarantine TPR under anisotropy with >= 95% Top-1 & <= 2% poison | **${e9.verdicts.H9_car_debiasing_rescues_anisotropic_quarantine_and_recall}** |`,
+  `| **H10a** Wildberger Rational Quadrance Gate | >= 99.9% decision equivalence with float64 cos >= tau (0 ISqrt64 calls) | **${e10.verdicts.H10a_rational_gate_matches_float64_ge_99_9pct}** |`,
+  `| **H10b** Real GnoVM Rational Quadrance Gas | >= 25% GnoVM gas reduction vs UnitNormalizeFixed + CosineFixed (100 pairs) | **${e10.verdicts.H10b_real_gnovm_gas_reduction_ge_25pct}** |`,
+  `| **H11a** AR(1) Innovation Prewhitening (\`ρ=0.70\`) | >= 70% cut in autocorrelated clean FPR (<= 10%) with >= 95% shift TPR | **${e11.verdicts.H11a_ar1_prewhitening_cuts_clean_fpr_ge_70pct_and_keeps_shift_tpr_ge_95pct}** |`,
+  `| **H11b** Fixed-Point Youden-J & ROC-AUC | MAE < 1e-5 vs IEEE-754 float64 across 200 calibration batches | **${e11.verdicts.H11b_youden_j_and_roc_auc_mae_lt_1e5}** |`,
+  `| **H12a** RFC 6962 §2.1.4.2 Consistency Proofs | 100% pass & tamper rejection across all 2,080 prefix pairs (1<=N1<=N2<=64) + N=250 | **${e12.verdicts.H12a_100pct_rfc6962_consistency_proof_verification_and_tamper_rejection}** |`,
   '',
   '---',
   '',
@@ -1876,6 +2198,31 @@ const md = [
   '| --- | ---: | ---: | ---: |',
   `| \`RawMemoryVault\` (No Cone Debiasing) | ${e9.RawMemoryVault.poisonQuarantineTPR_pct}% | ${e9.RawMemoryVault.top1ExactTargetRecall_pct}% | ${e9.RawMemoryVault.top3PoisonContamination_pct}% |`,
   `| **\`CAR_DebiasedMemoryVault\` (CAR + Dispersion-Gated RRF)** | **${e9.CAR_DebiasedMemoryVault.poisonQuarantineTPR_pct}%** | **${e9.CAR_DebiasedMemoryVault.top1ExactTargetRecall_pct}%** | **${e9.CAR_DebiasedMemoryVault.top3PoisonContamination_pct}%** |`,
+  '',
+  '---',
+  '',
+  '## Experiment E10 — Wildberger Rational Trigonometry: Zero-`ISqrt64` Signed Quadrance & Spread (Cross-Ref `@frintroper/wildberger-math` & Wildberger 2005)',
+  '',
+  `- **Float64 Cosine Threshold Decision Equivalence (1,000 unnormalized pairs × 4 thresholds = 4,000 checks):** **\`${e10.float64DecisionAgreement_pct}%\`** agreement (\`maxSpreadAbsError = ${e10.maxSpreadAbsError}\`).`,
+  `- **Real Gno v1.8.0 VM Gas (100 unnormalized 8D pairs):** Classical \`UnitNormalizeFixed + CosineFixed\` = \`${e10.gnovm100PairsGas.classicalUnitNormalizeCosGas.toLocaleString()}\` gas vs **Wildberger \`RationalCosGateFixed\` = \`${e10.gnovm100PairsGas.wildbergerRationalCosGateGas.toLocaleString()}\` gas (\`-${e10.gnovm100PairsGas.gasReduction_pct}%\` GnoVM gas saved!)**.`,
+  '',
+  '---',
+  '',
+  '## Experiment E11 — Autocorrelated (`AR(1), ρ = 0.70`) Agent Telemetry: Causal Innovation Prewhitening & Fixed-Point Youden-J Calibration (Cross-Ref Arobi Labs)',
+  '',
+  '| Detector (300 Paired AR(1) Episodes × 60 Steps, `ρ = 0.70`) | Clean AR(1) FPR | Single +10σ Spike FPR | Sustained +2.5σ Shift TPR |',
+  '| --- | ---: | ---: | ---: |',
+  `| White-Noise \`HampelCusum\` (Uncorrected for AR(1)) | ${e11.WhiteNoiseHampelCusum.ar1CleanFPR_pct}% | ${e11.WhiteNoiseHampelCusum.singleSpike10SigmaFPR_pct}% | ${e11.WhiteNoiseHampelCusum.shift25SigmaTPR_pct}% |`,
+  `| **\`AR1PrewhitenedHampelCusum\` (Causal Innovation Prewhitened)** | **${e11.AR1PrewhitenedHampelCusum.ar1CleanFPR_pct}%** | **${e11.AR1PrewhitenedHampelCusum.singleSpike10SigmaFPR_pct}%** | **${e11.AR1PrewhitenedHampelCusum.shift25SigmaTPR_pct}%** |`,
+  '',
+  `- **On-Chain \`CalibrateThresholdYoudenFixed\` Fidelity (200 score batches):** Max Youden-J Error = \`${e11.youdenAndRocAucFidelity200.maxYoudenJAbsError}\`, Max ROC-AUC Error = \`${e11.youdenAndRocAucFidelity200.maxRocAucAbsError}\`.`,
+  '',
+  '---',
+  '',
+  '## Experiment E12 — RFC 6962 / RFC 9162 §2.1.4.2 Logarithmic Merkle Consistency Proofs (`SUBPROOF`)',
+  '',
+  `- **Exhaustive Prefix Pairs ($1 \\le N_1 \\le N_2 \\le 64$):** \`${e12.validProofsVerified}/${e12.exhaustivePrefixPairs1To64}\` valid consistency proofs verified (\`100%\`), \`${e12.tamperedProofsRejected}/${e12.exhaustivePrefixPairs1To64}\` tampered proofs rejected (\`100%\`), max proof length = \`${e12.maxProofHashesAt64}\` hashes.`,
+  `- **Large Tree Transition ($N_1 = 103 \\to N_2 = 250$):** Verified = \`${e12.largeTransition103To250.verified}\` in **\`${e12.largeTransition103To250.proofHashes}\` hashes**.`,
   '',
 ].join('\n');
 

@@ -412,3 +412,155 @@ func CommonAverageReferenceDebiasFixed(vec, coneRef []int64, coneWeightFixed int
 	}
 	return out, nil
 }
+
+// SignedQuadranceCosSqFixed computes Wildberger's signed rational cosine-squared:
+//   C_2(u, v) = sgn(u . v) * ((u . v)^2 * Scale) / (||u||^2 * ||v||^2) in [-Scale, +Scale]
+// using pure integer arithmetic with ZERO square roots (ISqrt64) and ZERO slice allocations.
+// By Cauchy-Schwarz, |u . v| <= max(||u||^2, ||v||^2), guaranteeing overflow-free evaluation.
+// Validated in Experiment E10 (cross-referencing @frintroper/wildberger-math & Wildberger 2005).
+func SignedQuadranceCosSqFixed(u, v []int64) (int64, error) {
+	if len(u) == 0 || len(u) != len(v) {
+		return 0, errors.New("vectors must be non-empty and share the same dimension")
+	}
+	var maxAbs uint64
+	for i := range u {
+		au := uint64(Abs64(u[i]))
+		av := uint64(Abs64(v[i]))
+		if au > maxAbs {
+			maxAbs = au
+		}
+		if av > maxAbs {
+			maxAbs = av
+		}
+	}
+	if maxAbs == 0 {
+		return 0, errors.New("zero vector in quadrance evaluation")
+	}
+	shift := uint(0)
+	for (maxAbs >> shift) > 1000000 {
+		shift++
+	}
+
+	var dot int64
+	var qu, qv uint64
+	for i := range u {
+		ui := u[i] >> shift
+		vi := v[i] >> shift
+		dot += ui * vi
+		qu += uint64(Abs64(ui)) * uint64(Abs64(ui))
+		qv += uint64(Abs64(vi)) * uint64(Abs64(vi))
+	}
+	if qu == 0 || qv == 0 {
+		return 0, errors.New("zero quadrance after scaling")
+	}
+	if dot == 0 {
+		return 0, nil
+	}
+
+	absDot := uint64(Abs64(dot))
+	qMax, qMin := qu, qv
+	if qv > qu {
+		qMax, qMin = qv, qu
+	}
+	for qMax > 100000000000 {
+		absDot >>= 1
+		qMax >>= 1
+		qMin >>= 1
+	}
+	if qMin == 0 {
+		return 0, nil
+	}
+	// By Cauchy-Schwarz, absDot <= sqrt(qu*qv) <= qMax, so ratio1 <= 10_000_000.
+	const interScale uint64 = 10000000
+	ratio1 := (absDot * interScale) / qMax
+	c2 := int64((ratio1 * absDot) / (qMin * (interScale / uint64(Scale))))
+	if c2 > Scale {
+		c2 = Scale
+	}
+	if dot < 0 {
+		return -c2, nil
+	}
+	return c2, nil
+}
+
+// RationalSpreadFixed computes Wildberger's Rational Spread S(u, v) = 1 - cos^2(theta)
+// in [0, Scale] without square roots or trig functions (0 = collinear/antipodal, Scale = orthogonal).
+func RationalSpreadFixed(u, v []int64) (int64, error) {
+	c2, err := SignedQuadranceCosSqFixed(u, v)
+	if err != nil {
+		return 0, err
+	}
+	return Scale - Abs64(c2), nil
+}
+
+// RationalCosGateFixed evaluates cos(u, v) >= thresholdFixed in O(d) integer arithmetic
+// with zero ISqrt64 calls and zero heap allocations by testing C_2(u, v) >= sgn(tau)*tau^2.
+func RationalCosGateFixed(u, v []int64, thresholdFixed int64) (bool, int64, error) {
+	c2, err := SignedQuadranceCosSqFixed(u, v)
+	if err != nil {
+		return false, 0, err
+	}
+	tauSq := MulFixed(Abs64(thresholdFixed), Abs64(thresholdFixed))
+	if thresholdFixed < 0 {
+		tauSq = -tauSq
+	}
+	return c2 >= tauSq, c2, nil
+}
+
+// CalibrateThresholdYoudenFixed finds the optimal fixed-point decision threshold maximizing
+// Youden's J = TPR - FPR (where cleanScores >= threshold and attackScores < threshold) and
+// computes the exact Mann-Whitney / Wilcoxon ROC-AUC in [0, Scale] with zero floats.
+// Validated in Experiment E11b (cross-referencing Arobi Labs arobi-primitives/coherence.py).
+func CalibrateThresholdYoudenFixed(cleanScores, attackScores []int64) (bestThresholdFixed, youdenJFixed, rocAucFixed int64, err error) {
+	nc := len(cleanScores)
+	na := len(attackScores)
+	if nc == 0 || na == 0 {
+		return 0, 0, 0, errors.New("calibration requires non-empty clean and attack score slices")
+	}
+
+	// 1. Exact Mann-Whitney ROC-AUC: P(clean > attack) + 0.5*P(clean == attack)
+	var halfWins int64
+	for i := 0; i < nc; i++ {
+		cs := cleanScores[i]
+		for j := 0; j < na; j++ {
+			as := attackScores[j]
+			if cs > as {
+				halfWins += 2
+			} else if cs == as {
+				halfWins += 1
+			}
+		}
+	}
+	rocAucFixed = (halfWins * Scale) / int64(2*nc*na)
+
+	// 2. Evaluate Youden's J(t) = TPR(t) - FPR(t) across all candidate thresholds.
+	bestJ := int64(-2 * Scale)
+	bestT := cleanScores[0]
+	for idx := 0; idx < nc+na; idx++ {
+		var t int64
+		if idx < nc {
+			t = cleanScores[idx]
+		} else {
+			t = attackScores[idx-nc]
+		}
+		var cHits, aFalse int64
+		for i := 0; i < nc; i++ {
+			if cleanScores[i] >= t {
+				cHits++
+			}
+		}
+		for j := 0; j < na; j++ {
+			if attackScores[j] >= t {
+				aFalse++
+			}
+		}
+		tpr := (cHits * Scale) / int64(nc)
+		fpr := (aFalse * Scale) / int64(na)
+		jStat := tpr - fpr
+		if jStat > bestJ || (jStat == bestJ && t > bestT) {
+			bestJ = jStat
+			bestT = t
+		}
+	}
+	return bestT, bestJ, rocAucFixed, nil
+}

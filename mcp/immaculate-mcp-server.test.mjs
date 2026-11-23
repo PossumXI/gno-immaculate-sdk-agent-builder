@@ -53,7 +53,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(init.result.serverInfo.name, 'immaculate-sdk-agent-mcp');
 
     const list = await client.call('tools/list');
-    assert.equal(list.result.tools.length, 9);
+    assert.equal(list.result.tools.length, 10);
 
     // 1. Seed 1 trusted memory, block a k=1->k=2 cold-start poison injection (E6b), then seed 2nd clean + block post-boot poison.
     const m1 = await client.call('tools/call', {
@@ -158,6 +158,15 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(plan.result.structuredContent.stepCount, 2);
     assert.ok(plan.result.structuredContent.gnoCode.includes('.Parallel()'));
     assert.ok(plan.result.structuredContent.gnoCode.includes(deny.result.structuredContent.accumulatorRoot));
+
+    // 6. RFC 6962 / RFC 9162 section 2.1.4.2 logarithmic Merkle consistency proof between size 2 and size 4.
+    const cons = await client.call('tools/call', {
+      name: 'verify_consistency_proof',
+      arguments: { firstSize: 2, secondSize: 4 },
+    });
+    assert.equal(cons.result.structuredContent.verified, true);
+    assert.equal(cons.result.structuredContent.firstRootHex, ok.result.structuredContent.accumulatorRoot);
+    assert.equal(cons.result.structuredContent.secondRootHex, deny.result.structuredContent.accumulatorRoot);
   } finally {
     client.close();
   }

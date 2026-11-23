@@ -35,9 +35,9 @@ jobs:
         env:
           GNO_SRC: /tmp/gno-v1.8.0
         run: bash scripts/run-gno-tests.sh
-      - name: Run pre-registered scientific experiments (E1–E9)
+      - name: Run pre-registered scientific experiments (E1–E12)
         env:
           GNO_SRC: /tmp/gno-v1.8.0
         run: |
           node experiments/run_experiments.mjs
-          node -e "const r = JSON.parse(require('fs').readFileSync('experiments/results.json','utf8')); const all = {...r.E1_fixedPointFidelity.verdicts, ...r.E2_adversarialBenchmark.verdicts, ...r.E3_gnovmGasScaling.verdicts, ...r.E4_governedMemoryAndFamiliars.verdicts, ...r.E5_crossReferenceExternalDynamics.verdicts, ...r.E6_coldStartInductionGap.verdicts, ...r.E7_antipodalSymmetryAndMedoidInit.verdicts, ...r.E8_filterOpacityPulsedAttacks.verdicts, ...r.E9_anisotropicCommonConeCAR.verdicts}; console.log(all); if (Object.values(all).some(v => v !== 'PASS' && v !== 'KILLED_JERK_KEPT_HAMPEL_CUSUM' && v !== 'DIAGNOSED_VARIANCE_DOUBLING')) process.exit(1);"
+          node -e "const r = JSON.parse(require('fs').readFileSync('experiments/results.json','utf8')); const all = {...r.E1_fixedPointFidelity.verdicts, ...r.E2_adversarialBenchmark.verdicts, ...r.E3_gnovmGasScaling.verdicts, ...r.E4_governedMemoryAndFamiliars.verdicts, ...r.E5_crossReferenceExternalDynamics.verdicts, ...r.E6_coldStartInductionGap.verdicts, ...r.E7_antipodalSymmetryAndMedoidInit.verdicts, ...r.E8_filterOpacityPulsedAttacks.verdicts, ...r.E9_anisotropicCommonConeCAR.verdicts, ...r.E10_wildbergerRationalQuadrance.verdicts, ...r.E11_ar1PrewhiteningAndYoudenCalibration.verdicts, ...r.E12_rfc6962ConsistencyProofs.verdicts}; console.log(all); if (Object.values(all).some(v => v !== 'PASS' && v !== 'KILLED_JERK_KEPT_HAMPEL_CUSUM' && v !== 'DIAGNOSED_VARIANCE_DOUBLING')) process.exit(1);"

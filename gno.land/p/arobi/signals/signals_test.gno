@@ -264,3 +264,80 @@ func TestCommonAverageReferenceDebiasFixedRemovesAnisotropicCone(t *testing.T) {
 	uassert.True(t, cleanDeb[1] > 990000)
 	uassert.True(t, poisonDeb[1] < -990000)
 }
+
+func TestWildbergerRationalQuadranceSpreadYoudenAndAR1Prewhitening(t *testing.T) {
+	// 1. Wildberger Rational Quadrance & Spread (Experiment E10): zero ISqrt64, exact sign.
+	u := []int64{300000, 400000, 0, 0} // norm 500,000
+	v := []int64{400000, 300000, 0, 0} // dot = 24, cos = 24/25 = 0.96 -> cos^2 = 0.9216 = 921,600
+	c2, err := SignedQuadranceCosSqFixed(u, v)
+	uassert.NoError(t, err)
+	uassert.Equal(t, int64(921600), c2)
+
+	sp, err := RationalSpreadFixed(u, v)
+	uassert.NoError(t, err)
+	uassert.Equal(t, int64(78400), sp) // 1 - 0.9216 = 0.0784
+
+	passHi, _, err := RationalCosGateFixed(u, v, 950000) // 0.96 >= 0.95 -> true
+	uassert.NoError(t, err)
+	uassert.True(t, passHi)
+	passTooHi, _, err := RationalCosGateFixed(u, v, 970000) // 0.96 >= 0.97 -> false
+	uassert.NoError(t, err)
+	uassert.False(t, passTooHi)
+
+	// 2. Youden-J optimal threshold & exact Mann-Whitney ROC-AUC (Experiment E11b).
+	cleanSc := []int64{820000, 880000, 790000, 910000, 850000}
+	attackSc := []int64{120000, 310000, 240000, 410000, 190000}
+	bestT, jVal, auc, err := CalibrateThresholdYoudenFixed(cleanSc, attackSc)
+	uassert.NoError(t, err)
+	uassert.Equal(t, int64(Scale), jVal)
+	uassert.Equal(t, int64(Scale), auc)
+	uassert.True(t, bestT > 410000 && bestT <= 790000)
+
+	// 3. AR(1) lag estimation & prewhitened Hampel-CUSUM (Experiment E11a).
+	quiet := []int64{
+		100 * Scale, 108 * Scale, 112 * Scale, 109 * Scale, 103 * Scale,
+		96 * Scale, 92 * Scale, 95 * Scale, 101 * Scale, 107 * Scale,
+		110 * Scale, 106 * Scale,
+	}
+	base, rho, err := EstimateAR1Fixed(quiet)
+	uassert.NoError(t, err)
+	uassert.True(t, rho > 200000) // positive lag-1 autocorrelation
+	arDet, err := NewAR1PrewhitenedHampelCusum(base, rho, 4*Scale, Scale, 5, 3*Scale, 4*Scale, 24, 3)
+	uassert.NoError(t, err)
+	alarmed := false
+	for i := 0; i < 12; i++ {
+		al, _, _, _ := arDet.Update(base.MeanFixed + 3*base.SDFixed)
+		if al {
+			alarmed = true
+		}
+	}
+	uassert.True(t, alarmed)
+}
+
+func TestBenchWildbergerRationalCosGate100PairsGas(t *testing.T) {
+	u := []int64{312450, 418920, -192830, 512340, 223110, -334120, 128900, 441230}
+	v := []int64{298120, 391230, -181120, 489120, 210900, -310110, 119800, 430110}
+	for i := 0; i < 100; i++ {
+		v[0] = 298120 + int64(i)*100
+		ok, _, err := RationalCosGateFixed(u, v, 550000)
+		uassert.NoError(t, err)
+		uassert.True(t, ok)
+	}
+}
+
+func TestBenchClassicalUnitNormalizeCos100PairsGas(t *testing.T) {
+	u := []int64{312450, 418920, -192830, 512340, 223110, -334120, 128900, 441230}
+	v := []int64{298120, 391230, -181120, 489120, 210900, -310110, 119800, 430110}
+	for i := 0; i < 100; i++ {
+		v[0] = 298120 + int64(i)*100
+		uu, err := UnitNormalizeFixed(u)
+		uassert.NoError(t, err)
+		vv, err := UnitNormalizeFixed(v)
+		uassert.NoError(t, err)
+		var dot int64
+		for j := range uu {
+			dot += MulFixed(uu[j], vv[j])
+		}
+		uassert.True(t, dot >= 550000)
+	}
+}

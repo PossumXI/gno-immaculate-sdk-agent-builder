@@ -159,3 +159,41 @@ All 16 embeddings (12 clean + 4 keyword-stuffed poison) share a strong anisotrop
 
 ### Pre-Registered Criterion
 - **H9:** Under anisotropic cone collapse, `CAR_DebiasedMemoryVault` improves poison quarantine TPR by **$\ge 40$ percentage points** over `RawMemoryVault` while maintaining **$\ge 95\%$** Top-1 exact-target recall and **$\le 2\%$** Top-3 poison contamination.
+
+---
+
+## Experiment E10 — Wildberger Rational Trigonometry: Zero-`ISqrt64` Signed Quadrance Cosine & Spread Gate
+
+### Motivation & Attribution
+Cross-referencing `@frintroper/wildberger-math` and N. J. Wildberger's *Divine Proportions: Rational Trigonometry to Universal Geometry* (2005; clean-room MIT implementation), classical cosine similarity $\cos(u, v) = (u \cdot v)/(\|u\|_2 \|v\|_2)$ on GnoVM requires two Newton-Raphson `ISqrt64` calls and two normalized slice allocations per pair. Replacing angle $\theta$ with **Quadrance** $Q(u) = \sum u_i^2$, **Signed Quadrance Alignment** $C_2(u,v) = \operatorname{sgn}(u\cdot v)\lfloor (u\cdot v)^2 \cdot \text{Scale} / (Q(u)Q(v))\rfloor$, and **Rational Spread** $S(u,v) = \text{Scale} - |C_2(u,v)| = 1 - \cos^2\theta$ eliminates all square roots and heap allocations.
+
+### Pre-Registered Criteria (`1,000` random unnormalized vector pairs in $\mathbb{R}^{16}$, `seed = 20261123`, plus real GnoVM gas benchmark)
+- **H10a (Exact Threshold Equivalence):** `RationalCosGateFixed(u, v, tauFixed)` matches exact IEEE-754 `float64` $\cos(u,v) \ge \tau$ on **$\ge 99.9\%$** of pairs (`1,000` trials across thresholds $\tau \in \{-0.50, +0.3025, +0.55, +0.75\}$) with zero `ISqrt64` calls.
+- **H10b (Real GnoVM Gas Savings):** On real Gno v1.8.0 `gno test -v`, 100 unnormalized pairwise threshold evaluations with `RationalCosGateFixed` consume **$\ge 25\%$ less GnoVM gas** than `UnitNormalizeFixed` + `CosineFixed`.
+
+---
+
+## Experiment E11 — Autocorrelated ($\text{AR}(1)$) Agent Telemetry: Causal Innovation Prewhitening & Fixed-Point Youden-$J$ Self-Calibration
+
+### Motivation & Attribution
+Cross-referencing Arobi Labs' `arobi-primitives` change-detection findings (`drift.py` AR-sieve & `coherence.py` Youden-$J$ gate calibration; clean-room MIT fixed-point implementation), real agent telemetry streams (consecutive LLM turn costs, gas prices, DeFi pool depth) are positively autocorrelated ($\rho \in [0.5, 0.75]$). Standard white-noise CUSUM suffers severe false-alarm inflation under $\text{AR}(1)$ correlation.
+
+### Experimental Design (`300` paired episodes × 60 steps at lag-1 $\rho = 0.70$, `seed = 20261123`)
+Compare white-noise `HampelCusum` against **`AR1PrewhitenedHampelCusum`** (which estimates $\hat{\rho}$ from the quiet baseline window, clamps spikes with `Hampel(w=5, k=3)`, transforms $z_t$ into causal one-step innovations $e_t = (z_t - \hat{\rho} z_{t-1})/\sqrt{1-\hat{\rho}^2}$, and feeds CUSUM + Channel-B Opacity clip counter). Also test **`CalibrateThresholdYoudenFixed`** against `float64` Youden's $J = \max_t(\text{TPR}-\text{FPR})$ and exact Mann-Whitney ROC-AUC across `200` score batches.
+
+### Pre-Registered Criteria
+- **H11a:** On clean $\text{AR}(1)$ streams ($\rho = 0.70$), `AR1PrewhitenedHampelCusum` cuts clean false alarms by **$\ge 70\%$** relative to white-noise `HampelCusum` (down to **$\le 10\%$** clean FPR) while maintaining **$\ge 95\%$ TPR** on $+2.5\sigma$ sustained shifts and **$\le 10\%$** single $+10\sigma$ spike FPR.
+- **H11b:** Fixed-point `CalibrateThresholdYoudenFixed` achieves **MAE `< 1e-5`** vs IEEE-754 `float64` for both optimal Youden's $J$ and ROC-AUC across 200 batches.
+
+---
+
+## Experiment E12 — RFC 6962 / RFC 9162 §2.1.2 Logarithmic Merkle Consistency Proofs (`SUBPROOF`)
+
+### Motivation
+When an off-chain harness (`gnosh.ai`, `Ullumii`, or an Arobi Whisper peer) observes checkpoint root $R_1$ at size $N_1$ and later checkpoint root $R_2$ at size $N_2 > N_1$, it needs an $O(\log N_2)$ **RFC 6962 Consistency Proof** proving that tree $N_1$ is an exact append-only prefix of tree $N_2$ (no historical receipt or closure was altered).
+
+### Pre-Registered Criteria
+- **H12a (Exhaustive Prefix Verification & Tamper Rejection):** Across all `2,080` prefix pairs $1 \le N_1 \le N_2 \le 64$ and large trees up to $N_2 = 250$:
+  - `100%` of valid consistency proofs verify in both Gno (`VerifyConsistency`) and Node.js (`verifyConsistencyProof`),
+  - Proof length is strictly bounded by $\le 2\lceil\log_2 N_2\rceil + 1$ hashes,
+  - `100%` of historical leaf tampering, root forgery, and size-mismatch attacks are rejected.

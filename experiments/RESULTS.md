@@ -1,6 +1,6 @@
 # Scientific Evaluation Results — Immaculate SDK Agent Builder
 
-**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-23T21:25:18.498Z`
+**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-23T21:43:41.041Z`
 
 ---
 
@@ -26,6 +26,11 @@
 | **H7b** Cross-Ref: Antipodal Split-Brain Guard | >= 95% split-brain TPR at 0% clean FPR | **PASS** |
 | **H8b** Cross-Ref: Filter Opacity (Period-6 `P > w=5` Drain) | >= 95% pulsed-6 TPR (+50 pts over HampelCusum v1) with <= 6.5% spike FPR & <= +1% clean FPR | **PASS** |
 | **H9** Arobi Labs: Anisotropic Common-Cone CAR | >= +40 pts quarantine TPR under anisotropy with >= 95% Top-1 & <= 2% poison | **PASS** |
+| **H10a** Wildberger Rational Quadrance Gate | >= 99.9% decision equivalence with float64 cos >= tau (0 ISqrt64 calls) | **PASS** |
+| **H10b** Real GnoVM Rational Quadrance Gas | >= 25% GnoVM gas reduction vs UnitNormalizeFixed + CosineFixed (100 pairs) | **PASS** |
+| **H11a** AR(1) Innovation Prewhitening (`ρ=0.70`) | >= 70% cut in autocorrelated clean FPR (<= 10%) with >= 95% shift TPR | **PASS** |
+| **H11b** Fixed-Point Youden-J & ROC-AUC | MAE < 1e-5 vs IEEE-754 float64 across 200 calibration batches | **PASS** |
+| **H12a** RFC 6962 §2.1.4.2 Consistency Proofs | 100% pass & tamper rejection across all 2,080 prefix pairs (1<=N1<=N2<=64) + N=250 | **PASS** |
 
 ---
 
@@ -65,7 +70,7 @@ Calibrated on 400 quiet 60-step episodes (target 5% FPR): EMA threshold `125.393
 Measured directly via `gno test -v` on Gno v1.8.0:
 
 - **Single Governed Action (`Agent.Execute` + Warrant + Receipt + Closure + RFC 6962 Proofs):** `2,659,102` gas
-- **Single Adaptive Action (`HampelCusum DriftGuard` + 8D `CoherenceGuard` + `Agent.Execute` + Proofs):** `4,971,378` gas
+- **Single Adaptive Action (`HampelCusum DriftGuard` + 8D `CoherenceGuard` + `Agent.Execute` + Proofs):** `4,975,412` gas
 - **Familiar + 8-Record Governed MemoryVault Ingest + Hybrid RRF Top-3 Recall + Capability Action:** `14,548,452` gas
 
 | Accumulator Leaves (N) | Max RFC 6962 Proof Hashes | Cumulative Append + Proof + Verify Gas | Avg Gas / Leaf |
@@ -147,3 +152,28 @@ Cross-referenced external discrete non-local dynamics concepts (Johannes Geisen 
 | --- | ---: | ---: | ---: |
 | `RawMemoryVault` (No Cone Debiasing) | 23.5% | 100% | 87.7% |
 | **`CAR_DebiasedMemoryVault` (CAR + Dispersion-Gated RRF)** | **100%** | **99.7%** | **0%** |
+
+---
+
+## Experiment E10 — Wildberger Rational Trigonometry: Zero-`ISqrt64` Signed Quadrance & Spread (Cross-Ref `@frintroper/wildberger-math` & Wildberger 2005)
+
+- **Float64 Cosine Threshold Decision Equivalence (1,000 unnormalized pairs × 4 thresholds = 4,000 checks):** **`100%`** agreement (`maxSpreadAbsError = 0.000002377`).
+- **Real Gno v1.8.0 VM Gas (100 unnormalized 8D pairs):** Classical `UnitNormalizeFixed + CosineFixed` = `41,781,999` gas vs **Wildberger `RationalCosGateFixed` = `21,425,899` gas (`-48.72%` GnoVM gas saved!)**.
+
+---
+
+## Experiment E11 — Autocorrelated (`AR(1), ρ = 0.70`) Agent Telemetry: Causal Innovation Prewhitening & Fixed-Point Youden-J Calibration (Cross-Ref Arobi Labs)
+
+| Detector (300 Paired AR(1) Episodes × 60 Steps, `ρ = 0.70`) | Clean AR(1) FPR | Single +10σ Spike FPR | Sustained +2.5σ Shift TPR |
+| --- | ---: | ---: | ---: |
+| White-Noise `HampelCusum` (Uncorrected for AR(1)) | 42% | 42.3% | 100% |
+| **`AR1PrewhitenedHampelCusum` (Causal Innovation Prewhitened)** | **5.7%** | **5.3%** | **98.3%** |
+
+- **On-Chain `CalibrateThresholdYoudenFixed` Fidelity (200 score batches):** Max Youden-J Error = `1.11e-16`, Max ROC-AUC Error = `0`.
+
+---
+
+## Experiment E12 — RFC 6962 / RFC 9162 §2.1.4.2 Logarithmic Merkle Consistency Proofs (`SUBPROOF`)
+
+- **Exhaustive Prefix Pairs ($1 \le N_1 \le N_2 \le 64$):** `2080/2080` valid consistency proofs verified (`100%`), `2080/2080` tampered proofs rejected (`100%`), max proof length = `7` hashes.
+- **Large Tree Transition ($N_1 = 103 \to N_2 = 250$):** Verified = `true` in **`9` hashes**.
