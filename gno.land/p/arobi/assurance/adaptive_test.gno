@@ -170,6 +170,21 @@ func TestMultiAgentDelegatedWarrantAttenuation(t *testing.T) {
 	uassert.Equal(t, "swapped:order-1", string(out))
 	uassert.NoError(t, bundle.Verify())
 	uassert.NoError(t, worker.VerifyChain())
+
+	// Cross-harness frame execution (gnosh.ai / Ullumii) binds exact frame digest into ContextDigest!
+	frame := HarnessFrame{
+		Harness:       HarnessGnosh,
+		SessionID:     "gnosh-session-7",
+		FrameID:       "frame-2",
+		ParentFrameID: "frame-1",
+		Action:        "execute_swap",
+		Target:        "pool:gnot-usdc",
+		Height:        106,
+	}
+	outF, bundleF, err := worker.ExecuteHarnessFrame(frame, "g1gnosh", []byte("order-2"), []byte("mem-frame"), 350)
+	uassert.NoError(t, err)
+	uassert.Equal(t, "swapped:order-2", string(outF))
+	uassert.NoError(t, bundleF.Verify())
 }
 
 func TestGasScalingAccumulator250Leaves(t *testing.T) {

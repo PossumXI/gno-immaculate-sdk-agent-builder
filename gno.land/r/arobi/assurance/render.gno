@@ -46,7 +46,8 @@ func renderHome() string {
 	b.WriteString("| Registered Agents | " + strconv.Itoa(len(agentOrder)) + " |\n")
 	b.WriteString("| Anchored Checkpoints | " + strconv.FormatUint(globalAcc.Size(), 10) + " |\n")
 	b.WriteString("| Global RFC 6962 Root | `" + sdk.Hex(globalAcc.Root()) + "` |\n")
-	b.WriteString("| Custody Model | Non-custodial (zero coins held or accepted) |\n")
+	b.WriteString("| Checkpoint Anchor Service Fee | `" + strconv.FormatInt(anchorFeeUgnot, 10) + "ugnot` per checkpoint |\n")
+	b.WriteString("| Pro Agent Plan (30 days) | `" + strconv.FormatInt(agentPlanPriceUgnot, 10) + "ugnot` (1-block anchor cadence) |\n")
 	b.WriteString("| Built-In Demo Agent | [Inspect Live Demo Evidence](/r/arobi/assurance:demo) |\n")
 	b.WriteString("| Scientific Benchmarks | [Measured Evaluation (E1–E3)](/r/arobi/assurance:benchmarks) |\n\n")
 

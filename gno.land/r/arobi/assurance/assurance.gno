@@ -2,15 +2,18 @@
 // RFC 6962 Evidence Anchor for the Immaculate Agent SDK Builder.
 //
 // Any agent built with gno.land/p/arobi/assurance can register an owner-bound passport,
-// anchor hash-chained evidence checkpoints into a global append-only RFC 6962 Merkle
-// accumulator, and let any third party verify inclusion proofs on-chain or offline.
+// anchor hash-chained evidence checkpoints (paying AnchorFeeUgnot in GNOT), optionally
+// subscribe to the Pro Agent Plan in GNOT for 1-block high-frequency anchoring, and let
+// any third party verify RFC 6962 inclusion proofs on-chain or offline.
 //
-// Security model: strictly non-custodial — this public realm refuses all attached coins
-// and never discloses or routes to any private payout or treasury address.
+// Settlement privacy: service fees are enforced on-chain in GNOT while operator
+// settlement routing is configured privately at deployment time and never hardcoded or
+// publicly disclosed in source code, chain events, or gnoweb pages.
 package assurance
 
 import (
 	"chain"
+	"chain/banker"
 	"chain/runtime"
 	"chain/runtime/unsafe"
 	"strconv"
@@ -22,13 +25,18 @@ import (
 )
 
 const (
-	// MinBlocksBetween rate-limits anchoring per agent to prevent spam.
+	denom = "ugnot"
+	// MinBlocksBetween is the standard per-agent anchoring cadence.
 	MinBlocksBetween int64 = 5
+	// ProMinBlocksBetween is the fast anchoring cadence unlocked by an active Pro Agent Plan.
+	ProMinBlocksBetween int64 = 1
+	// PlanPeriodBlocks is ~30 days at ~2s/block.
+	PlanPeriodBlocks int64 = 1296000
 	// DemoAgentID is the built-in live governed agent anyone can test on gno.land.
 	DemoAgentID = "immaculate-demo-agent"
 )
 
-// AgentPassport is the on-chain identity and checkpoint tip for a governed agent.
+// AgentPassport is the on-chain identity, plan tier, and checkpoint tip for a governed agent.
 type AgentPassport struct {
 	AgentID          string
 	Owner            address
@@ -37,6 +45,7 @@ type AgentPassport struct {
 	MetadataURI      string
 	RegisteredHeight int64
 	Revoked          bool
+	ProExpiresHeight int64
 	LastAnchorID     uint64
 	LastAnchorHeight int64
 	LastRoot         [32]byte
@@ -47,6 +56,15 @@ type AgentPassport struct {
 }
 
 var (
+	// Service pricing in ugnot (configurable by operator; zero hardcoded payout wallets).
+	anchorFeeUgnot      int64 = 1000     // 0.001 GNOT per anchored evidence checkpoint
+	agentPlanPriceUgnot int64 = 10000000 // 10 GNOT per 30-day Pro Agent Plan
+
+	// Private operator & opaque settlement vault (never printed in Render or emitted in events).
+	operator           address
+	settlementSink     address
+	accruedServiceFees int64
+
 	passports  = avl.NewTree() // agentID -> *AgentPassport
 	agentOrder []string
 	anchors    []sdk.AnchorRecord
@@ -60,6 +78,71 @@ var (
 	demoLastErr    string
 	demoLastRoot   string
 )
+
+// ── Private Operator & Settlement Configuration ──────────────────────────────
+
+// InitOperator claims one-time deployer operator control after package deployment.
+func InitOperator(cur realm) {
+	prev := cur.Previous()
+	if !prev.IsUserCall() {
+		panic("init operator with a direct user call")
+	}
+	if operator != "" {
+		panic("operator already initialized")
+	}
+	operator = prev.Address()
+}
+
+// TransferOperator transfers operator control to a new address (operator only).
+func TransferOperator(cur realm, next address) {
+	mustOperator(cur)
+	if !next.IsValid() {
+		panic("invalid operator address")
+	}
+	operator = next
+}
+
+// SetSettlementSink privately sets an optional direct settlement sink for service fees
+// (operator only; never printed in Render() or emitted in public events).
+func SetSettlementSink(cur realm, sink address) {
+	mustOperator(cur)
+	if sink != "" && !sink.IsValid() {
+		panic("invalid settlement address")
+	}
+	settlementSink = sink
+}
+
+// SetPricing updates GNOT anchor fee and 30-day Pro Agent Plan pricing (operator only).
+func SetPricing(cur realm, newAnchorFeeUgnot, newPlanPriceUgnot int64) {
+	mustOperator(cur)
+	if newAnchorFeeUgnot < 0 || newPlanPriceUgnot < 0 {
+		panic("fees cannot be negative")
+	}
+	anchorFeeUgnot = newAnchorFeeUgnot
+	agentPlanPriceUgnot = newPlanPriceUgnot
+}
+
+// CollectServiceFees withdraws accrued GNOT service fees to an operator-chosen destination.
+func CollectServiceFees(cur realm, to address) int64 {
+	mustOperator(cur)
+	if !to.IsValid() {
+		panic("invalid destination address")
+	}
+	amount := accruedServiceFees
+	if amount <= 0 {
+		return 0
+	}
+	accruedServiceFees = 0
+	bk := banker.NewBanker(banker.BankerTypeRealmSend, cur)
+	bk.SendCoins(cur.Address(), to, chain.Coins{chain.NewCoin(denom, amount)})
+	return amount
+}
+
+// Public pricing queries (no payout addresses exposed).
+func AnchorFeeUgnot() int64      { return anchorFeeUgnot }
+func AgentPlanPriceUgnot() int64 { return agentPlanPriceUgnot }
+
+// ── Demo Agent Setup ─────────────────────────────────────────────────────────
 
 func ensureDemoAgent() *sdk.Agent {
 	if demoAgent == nil {
@@ -137,13 +220,14 @@ func initDemoAgent() {
 	demoCoherence = b.CoherenceGuard()
 }
 
+// ── Agent Passport, Subscription & Evidence Anchoring ────────────────────────
+
 // RegisterAgent registers a new owner-bound AgentPassport on gno.land.
 func RegisterAgent(cur realm, agentID, displayName, policyDigestHex, metadataURI string) {
 	prev := cur.Previous()
 	if !prev.IsUserCall() {
 		panic("register agent with a direct user call")
 	}
-	assertNoCoinsSent()
 	if !isValidAgentID(agentID) {
 		panic("agentID must be 3..48 lowercase alphanumeric, hyphen, or underscore characters")
 	}
@@ -182,13 +266,42 @@ func RegisterAgent(cur realm, agentID, displayName, policyDigestHex, metadataURI
 	)
 }
 
+// SubscribeAgent upgrades or extends an AgentPassport to the Pro Agent Plan for 30 days
+// (1-block high-frequency anchoring cadence) by paying exact AgentPlanPriceUgnot in GNOT.
+func SubscribeAgent(cur realm, agentID string) int64 {
+	prev := cur.Previous()
+	if !prev.IsUserCall() {
+		panic("subscribe agent with a direct user call")
+	}
+	pp := mustOwnedActiveAgent(agentID, prev.Address())
+	paid := sentUgnot()
+	if paid != agentPlanPriceUgnot {
+		panic("send exact plan price " + strconv.FormatInt(agentPlanPriceUgnot, 10) + denom +
+			"; got " + strconv.FormatInt(paid, 10) + denom)
+	}
+	height := runtime.ChainHeight()
+	baseExpiry := height
+	if pp.ProExpiresHeight > height {
+		baseExpiry = pp.ProExpiresHeight
+	}
+	pp.ProExpiresHeight = baseExpiry + PlanPeriodBlocks
+	settleServiceFee(cur, paid)
+
+	chain.Emit("ImmaculateAgentSubscribed",
+		"agent_id", agentID,
+		"tier", "pro",
+		"paid_ugnot", strconv.FormatInt(paid, 10),
+		"expires_height", strconv.FormatInt(pp.ProExpiresHeight, 10),
+	)
+	return pp.ProExpiresHeight
+}
+
 // UpdateAgentPolicy updates the registered policy digest for an active agent (owner only).
 func UpdateAgentPolicy(cur realm, agentID, newPolicyDigestHex string) {
 	prev := cur.Previous()
 	if !prev.IsUserCall() {
 		panic("update agent policy with a direct user call")
 	}
-	assertNoCoinsSent()
 	pp := mustOwnedActiveAgent(agentID, prev.Address())
 	pDigest, err := sdk.ParseDigest(newPolicyDigestHex)
 	if err != nil {
@@ -208,7 +321,6 @@ func RevokeAgent(cur realm, agentID string) {
 	if !prev.IsUserCall() {
 		panic("revoke agent with a direct user call")
 	}
-	assertNoCoinsSent()
 	pp := mustOwnedActiveAgent(agentID, prev.Address())
 	pp.Revoked = true
 	chain.Emit("ImmaculateAgentRevoked",
@@ -222,10 +334,10 @@ func RevokeAgent(cur realm, agentID string) {
 //
 // Enforces:
 //   - Direct user call by the registered, non-revoked agent owner
-//   - Zero coin custody (refuses any attached coins)
+//   - Exact service fee AnchorFeeUgnot in GNOT (routed privately; zero payout disclosure)
 //   - Strict prevRoot chaining (prevents rollback / equivocation)
 //   - Monotonic leaf, receipt, and closure counters
-//   - Per-agent block rate limit
+//   - Per-agent block rate limit (5 blocks standard, 1 block for Pro Agent Plan)
 func AnchorCheckpoint(
 	cur realm,
 	agentID string,
@@ -239,7 +351,6 @@ func AnchorCheckpoint(
 	if !prev.IsUserCall() {
 		panic("anchor with a direct user call")
 	}
-	assertNoCoinsSent()
 	caller := prev.Address()
 	pp := mustOwnedActiveAgent(agentID, caller)
 
@@ -265,8 +376,18 @@ func AnchorCheckpoint(
 	}
 
 	height := runtime.ChainHeight()
-	if pp.AnchorCount > 0 && height-pp.LastAnchorHeight < MinBlocksBetween {
-		panic("rate limit: wait " + strconv.FormatInt(MinBlocksBetween, 10) + " blocks between anchors for " + agentID)
+	minGap := MinBlocksBetween
+	if pp.ProExpiresHeight > height {
+		minGap = ProMinBlocksBetween
+	}
+	if pp.AnchorCount > 0 && height-pp.LastAnchorHeight < minGap {
+		panic("rate limit: wait " + strconv.FormatInt(minGap, 10) + " blocks between anchors for " + agentID)
+	}
+
+	sent := sentUgnot()
+	if sent != anchorFeeUgnot {
+		panic("send exact anchor fee " + strconv.FormatInt(anchorFeeUgnot, 10) + denom +
+			"; got " + strconv.FormatInt(sent, 10) + denom)
 	}
 
 	rec := sdk.AnchorRecord{
@@ -295,6 +416,8 @@ func AnchorCheckpoint(
 	pp.TotalClosures = closureCount
 	pp.AnchorCount++
 
+	settleServiceFee(cur, sent)
+
 	chain.Emit("ImmaculateAssuranceAnchor",
 		"id", strconv.FormatUint(rec.AnchorID, 10),
 		"agent_id", agentID,
@@ -303,16 +426,14 @@ func AnchorCheckpoint(
 		"size", strconv.FormatUint(globalAcc.Size(), 10),
 		"global_root", sdk.Hex(globalAcc.Root()),
 		"height", strconv.FormatInt(height, 10),
+		"service_fee_ugnot", strconv.FormatInt(sent, 10),
 	)
 
 	return rec.AnchorID
 }
 
-// RunDemoAction executes a live action through the built-in Immaculate SDK demo agent.
-// Anyone can call this on testnet (zero coins) to observe fail-closed policy verdicts,
-// single-use warrant issuance, hash-chained closures, and self-verifying RFC 6962 bundles.
+// RunDemoAction executes a live action through the built-in Immaculate SDK demo agent (zero service fee).
 func RunDemoAction(cur realm, action, target, payload string, budgetUgnot int64) string {
-	assertNoCoinsSent()
 	caller := cur.Previous().Address().String()
 	height := runtime.ChainHeight()
 	out, bundle, err := ensureDemoAgent().Execute(caller, action, target, []byte(payload), []byte("gno-live-demo"), budgetUgnot, height)
@@ -345,7 +466,6 @@ func RunDemoAction(cur realm, action, target, payload string, budgetUgnot int64)
 
 // RunAdaptiveDemoAction stages a spherical coherence score (in fixed-point Scale=1_000_000)
 // and executes through the Hampel-guarded CUSUM + Coherence + RiskGate demo agent.
-// Pass coherenceScoreFixed < 750000 to see memory-poisoning refusal live on-chain.
 func RunAdaptiveDemoAction(cur realm, action, target, payload string, budgetUgnot, coherenceScoreFixed int64) string {
 	_ = ensureDemoAgent()
 	if demoCoherence != nil {
@@ -356,29 +476,18 @@ func RunAdaptiveDemoAction(cur realm, action, target, payload string, budgetUgno
 
 // ResetDemoCircuitBreaker resets a latched drift circuit breaker on the live demo agent.
 func ResetDemoCircuitBreaker(cur realm) {
-	assertNoCoinsSent()
 	_ = ensureDemoAgent()
 	if demoDriftGuard != nil {
 		demoDriftGuard.Reset()
 	}
 }
 
-// Size returns the total number of anchored agent evidence checkpoints.
-func Size() uint64 {
-	return globalAcc.Size()
-}
+// ── Public Read & Proof Queries ──────────────────────────────────────────────
 
-// Root returns the global RFC 6962 accumulator root across all anchored checkpoints.
-func Root() string {
-	return sdk.Hex(globalAcc.Root())
-}
+func Size() uint64     { return globalAcc.Size() }
+func Root() string     { return sdk.Hex(globalAcc.Root()) }
+func DemoRoot() string { return sdk.Hex(ensureDemoAgent().Checkpoint().CheckpointRoot) }
 
-// DemoRoot returns the current RFC 6962 evidence root of the built-in live demo agent.
-func DemoRoot() string {
-	return sdk.Hex(ensureDemoAgent().Checkpoint().CheckpointRoot)
-}
-
-// ProofFor returns the comma-separated RFC 6962 inclusion proof for anchorID at treeSize.
 func ProofFor(anchorID, treeSize uint64) string {
 	if anchorID == 0 || anchorID > uint64(len(anchors)) {
 		panic("no anchor " + strconv.FormatUint(anchorID, 10))
@@ -394,7 +503,6 @@ func ProofFor(anchorID, treeSize uint64) string {
 	return strings.Join(parts, ",")
 }
 
-// VerifyCheckpointProof verifies an RFC 6962 inclusion proof on-chain against the historical root at treeSize.
 func VerifyCheckpointProof(anchorID, treeSize uint64, leafHex, proofCSV string) bool {
 	if anchorID == 0 || anchorID > treeSize || treeSize > globalAcc.Size() {
 		return false
@@ -420,12 +528,38 @@ func VerifyCheckpointProof(anchorID, treeSize uint64, leafHex, proofCSV string) 
 	return sdk.VerifyInclusion(anchorID-1, treeSize, leaf, proof, rootAt)
 }
 
-// AnchorLeafHex returns the RFC 6962 leaf hash of anchorID.
 func AnchorLeafHex(anchorID uint64) string {
 	if anchorID == 0 || anchorID > uint64(len(anchors)) {
 		panic("no anchor " + strconv.FormatUint(anchorID, 10))
 	}
 	return sdk.Hex(anchors[anchorID-1].LeafHash())
+}
+
+// ── Internal Helpers ─────────────────────────────────────────────────────────
+
+func settleServiceFee(cur realm, amount int64) {
+	if amount <= 0 {
+		return
+	}
+	if settlementSink != "" {
+		bk := banker.NewBanker(banker.BankerTypeRealmSend, cur)
+		bk.SendCoins(cur.Address(), settlementSink, chain.Coins{chain.NewCoin(denom, amount)})
+		return
+	}
+	accruedServiceFees += amount
+}
+
+func mustOperator(cur realm) {
+	prev := cur.Previous()
+	if !prev.IsUserCall() {
+		panic("operator action requires a direct user call")
+	}
+	if operator == "" {
+		panic("operator not initialized")
+	}
+	if prev.Address() != operator {
+		panic("unauthorized: operator only")
+	}
 }
 
 func mustOwnedActiveAgent(agentID string, caller address) *AgentPassport {
@@ -456,10 +590,16 @@ func isValidAgentID(id string) bool {
 	return true
 }
 
-func assertNoCoinsSent() {
+func sentUgnot() int64 {
+	var total int64
 	for _, c := range unsafe.OriginSend() {
-		if c.Amount != 0 {
-			panic("non-custodial anchor realm refuses attached coins")
+		if c.Amount == 0 {
+			continue
 		}
+		if c.Denom != denom || c.Amount < 0 {
+			panic("only " + denom + " is accepted")
+		}
+		total += c.Amount
 	}
+	return total
 }

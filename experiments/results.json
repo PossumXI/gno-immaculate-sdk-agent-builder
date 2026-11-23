@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T04:06:33.619Z",
+  "generatedAt": "2026-11-23T04:22:14.757Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -129,7 +129,7 @@
       "p/arobi/signals::TestDriftDetectorsCatchShiftWhileHampelCusumIgnoresSingleSpike": 11673525,
       "p/arobi/signals::TestSphericalCoherenceOrderInvarianceAndPoisoningDetection": 4845028,
       "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65379281,
-      "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 3794785,
+      "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
       "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
       "p/arobi/assurance::TestAccumulatorRFC6962ProofsAndTamperRejection": 10632310,
       "p/arobi/assurance::TestGovernedAgentLifecycleProducesVerifiableEvidenceOutOfTheBox": 12771854,
@@ -142,9 +142,9 @@
       "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
       "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
       "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
-      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsOnGnoLand": 36632356,
-      "r/arobi/assurance::TestRevocationAndRateLimit": 6831718,
-      "r/arobi/assurance::TestLiveOnChainDemoAgent": 30284777,
+      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 54635313,
+      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 7929120,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 30238007,
       "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29540006,
       "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
     },

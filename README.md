@@ -18,7 +18,8 @@ Most agent frameworks log mutable text after an action has already fired — and
    - **`HampelCusum` & `Page-Hinkley` Behavioral Drift Circuit Breakers (`DriftGuardPolicy`)**: Eliminates 96% of transient spike false alarms while catching stealth sub-cap $+2\sigma$ behavioral drift in a median of **3 steps**, automatically latching the circuit breaker until principal reset.
    - **Order-Invariant $O(n \cdot d)$ Spherical Coherence Gate (`CoherenceGuardPolicy`)**: Computes deterministic `MeanResultantLength` & `MeanPairwiseCosine` over quantized context embeddings to block cross-session memory poisoning before any tool executes.
 3. **Attenuated Multi-Agent Delegation (`DelegatedWarrant`):** A coordinator agent can delegate strictly attenuated child warrants to specialist workers (`maxSpend <= parent`, `expiry <= parent`, exact action/target scope) with cryptographic parent-to-child provenance chaining.
-4. **On-Chain Registry, Anti-Equivocation Anchor & Live Demo (`gno.land/r/arobi/assurance`):** Owner-bound `AgentPassport`s, strict `prevRoot`-chained `AnchorCheckpoint`s, on-chain `VerifyCheckpointProof`, live `RunAdaptiveDemoAction`, and `gnoweb` explorer (`/`, `/agent/<id>`, `/checkpoint/<id>`, `/demo`, `/benchmarks`).
+4. **Native `Ullumii` & `gnosh.ai` Harness Interoperability (`harness.gno` + `adapters/`):** Govern and wrap live tool turns from **`gnosh.ai`** (`gnosh -p` NDJSON frame streams via `adapters/gnosh-adapter.mjs`) and **`Ullumii`** (`adapters/ullumii-adapter.mjs`) directly into RFC 6962 `EvidenceBundle`s, on-chain `AnchorCheckpoint` calls, and optional encrypted Whisper Agent Bus handoffs.
+5. **On-Chain Registry, Anti-Equivocation Anchor, GNOT Service Plans & Live Demo (`gno.land/r/arobi/assurance`):** Owner-bound `AgentPassport`s, strict `prevRoot`-chained `AnchorCheckpoint`s, on-chain `VerifyCheckpointProof`, live `RunAdaptiveDemoAction`, `gnoweb` explorer (`/`, `/agent/<id>`, `/checkpoint/<id>`, `/demo`, `/benchmarks`), and built-in **GNOT service billing** (`AnchorFeeUgnot` per checkpoint, 30-day Pro Agent Plan via `SubscribeAgent` in GNOT for 1-block high-frequency anchoring, with private deployer-administered settlement routing that never exposes payout addresses on-chain).
 
 ---
 
@@ -46,8 +47,9 @@ All 7 pre-registered hypotheses in [experiments/PROTOCOL.md](experiments/PROTOCO
 | Path | Description |
 | --- | --- |
 | `gno.land/p/arobi/signals` | Pure integer (`Scale = 1,000,000`) deterministic signal assurance primitives: `RobustSmoother` (Hampel+EMA), `CausalMedian`, `CusumDetector`, `PageHinkleyDetector`, `HampelCusumDetector`, `MeanResultantLengthFixed`, `MeanPairwiseCosineFixed`, `CoherenceGate`, `SignalEvidence`. |
-| `gno.land/p/arobi/assurance` | Core Agent SDK & fluent `NewAgentBuilder`: fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), single-use `EffectWarrant`, `DelegatedWarrant` attenuation, `DecisionReceipt`, `EffectClosure`, RFC 6962 `Accumulator`, `EvidenceBundle.Verify()`, measured `AssuranceMetrics`. |
-| `gno.land/r/arobi/assurance` | Stateful Gno.land realm: `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, on-chain `VerifyCheckpointProof`, interactive `RunDemoAction` / `RunAdaptiveDemoAction`, and `gnoweb` UI. |
+| `gno.land/p/arobi/assurance` | Core Agent SDK & fluent `NewAgentBuilder`: fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), single-use `EffectWarrant`, `DelegatedWarrant` attenuation, `HarnessFrame` (`gnosh.ai`, `ullumii`, `whisper-bus`, `gno-realm`), `DecisionReceipt`, `EffectClosure`, RFC 6962 `Accumulator`, `EvidenceBundle.Verify()`, measured `AssuranceMetrics`. |
+| `gno.land/r/arobi/assurance` | Stateful Gno.land realm: `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, GNOT anchor fees & 30-day Pro Agent `SubscribeAgent` plan with private opaque operator settlement, on-chain `VerifyCheckpointProof`, interactive `RunDemoAction` / `RunAdaptiveDemoAction`, and `gnoweb` UI. |
+| `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs`, NDJSON frame ingestion → RFC 6962 proofs + anchor txs) and **`Ullumii`** (`ullumii-adapter.mjs`, governed session bridge + Whisper Agent Bus handoff). |
 | `examples/` | Runnable, GnoVM-tested end-to-end examples: DeFi Treasury Rebalancer (`BuildDeFiTreasuryAgent`) and Multi-Agent Attenuated Delegation (`BuildCoordinatorAndWorker`). |
 | `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`). |
 | `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible benchmark runner (`run_experiments.mjs`), and empirical results (`RESULTS.md`, `results.json`). |
@@ -95,12 +97,63 @@ func BuildDeFiAgent(owner string) (*assurance.Agent, *assurance.DriftGuardPolicy
 # 1. Real Gno v1.8.0 lint & unit tests across signals, assurance, realm, and examples
 bash scripts/run-gno-tests.sh
 
-# 2. Standalone zero-dependency offline verifier tests (Node.js >= 20)
-node --test verifier/verify-evidence.test.mjs
+# 2. Standalone zero-dependency offline verifier + Ullumii & gnosh.ai adapter tests (Node.js >= 20)
+node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs
 
 # 3. Full pre-registered scientific evaluation (Experiments E1, E2, E3)
 node experiments/run_experiments.mjs
 ```
+
+---
+
+## Using with `gnosh.ai` and `Ullumii`
+
+```js
+import { GnoshAssuranceSession } from './adapters/gnosh-adapter.mjs';
+import { UllumiiAssuranceBridge } from './adapters/ullumii-adapter.mjs';
+
+// 1. Govern a gnosh.ai (`gnosh -p`) NDJSON frame stream and build an on-chain AnchorCheckpoint tx
+const gnosh = new GnoshAssuranceSession({
+  agentId: 'gnosh-ops-agent',
+  owner: 'g1youraddress...',
+  allowedTools: ['rebalance', 'query_balance'],
+  maxBudgetUgnot: 5000,
+});
+gnosh.ingestNdjsonLine(JSON.stringify({
+  type: 'tool_call',
+  call_id: 'call-1',
+  tool: 'rebalance',
+  target: 'pool:gnot-usdc',
+  spend_ugnot: 1000,
+}));
+const anchorTx = gnosh.buildAnchorCheckpointTx({
+  realmPath: 'gno.land/r/arobi/assurance',
+  anchorFeeUgnot: 1000,
+});
+
+// 2. Wrap an Ullumii multi-agent action turn and optionally export a cross-harness Whisper handoff
+const ullumii = new UllumiiAssuranceBridge({
+  agentId: 'ullumii-coordinator',
+  owner: 'g1youraddress...',
+  allowedTools: ['delegate_task'],
+});
+const { receipt } = ullumii.recordTurn({
+  tool: 'delegate_task',
+  target: 'worker:gnosh-shell',
+  spendUgnot: 500,
+});
+```
+
+---
+
+## On-Chain Service Tiers & Private Settlement Security
+
+| Plan / Operation | Default Fee (GNOT) | Capabilities |
+| --- | --- | --- |
+| Standard Checkpoint (`AnchorCheckpoint`) | `0.001 GNOT` (`1,000 ugnot`) + network gas | Anti-equivocation RFC 6962 root anchor, on-chain proof verification, `gnoweb` explorer |
+| Pro Agent Plan (`SubscribeAgent`, 30 days) | `10 GNOT` / 30 days + network gas | High-frequency 1-block anchor cadence (`ProMinAnchorInterval = 1`) for continuous `Ullumii` & `gnosh.ai` fleets |
+
+> **Settlement Privacy:** No operator or payout wallet address is ever hardcoded in source code, rendered in `gnoweb`, or emitted in `chain.Emit` events. After deployment, the deployer initializes operator governance privately via `InitOperator`, configures an opaque settlement sink via `SetSettlementSink`, and settles accumulated service fees via `CollectServiceFees`.
 
 ---
 
