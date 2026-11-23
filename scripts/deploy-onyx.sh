@@ -17,6 +17,7 @@ REMOTE="${GNO_REMOTE:-https://rpc.onyx.testnets.gno.land:443}"
 CHAIN_ID="${GNO_CHAIN_ID:-onyx-1}"
 GAS_FEE="${GNO_GAS_FEE:-1000000ugnot}"
 GAS_WANTED="${GNO_GAS_WANTED:-10000000}"
+MAX_DEPOSIT="${GNO_MAX_DEPOSIT:-10000000ugnot}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAMESPACE="${2:-}"
@@ -51,6 +52,7 @@ deploy_pkg() {
   "$GNOKEY_BIN" maketx addpkg \
     --pkgpath "$pkgpath" \
     --pkgdir "$dst" \
+    --max-deposit "$MAX_DEPOSIT" \
     --remote "$REMOTE" \
     --chainid "$CHAIN_ID" \
     --gas-fee "$GAS_FEE" \
