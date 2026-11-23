@@ -209,13 +209,61 @@ func bytesLess(a, b [32]byte) bool {
 	return false
 }
 
+func hashSingleVec(v []int64) [32]byte {
+	buf := make([]byte, 0, 8+len(v)*8)
+	buf = binary.BigEndian.AppendUint64(buf, uint64(len(v)))
+	for _, x := range v {
+		buf = binary.BigEndian.AppendUint64(buf, uint64(x))
+	}
+	return sha256.Sum256(buf)
+}
+
+// discreteMedoidUnit returns the strictly order-invariant discrete L1 medoid of a unit
+// vector set (minimizing sum_j ||u_i - u_j||, breaking exact-distance ties deterministically
+// by canonical vector SHA-256). Eliminates the exact 180-degree cancellation order-dependence
+// discovered in Experiment E7a (cross-referencing @frintroper/Symmetry-No-Symmetry).
+func discreteMedoidUnit(units [][]int64) []int64 {
+	n := len(units)
+	dim := len(units[0])
+	bestIdx := 0
+	var bestSum uint64
+	var bestHash [32]byte
+	haveBest := false
+
+	for i := 0; i < n; i++ {
+		var sumDist uint64
+		for j := 0; j < n; j++ {
+			if i == j {
+				continue
+			}
+			var sq uint64
+			for d := 0; d < dim; d++ {
+				ds := uint64(Abs64(units[i][d]-units[j][d]) / 1000)
+				sq += ds * ds
+			}
+			sumDist += ISqrt64(sq)
+		}
+		h := hashSingleVec(units[i])
+		if !haveBest || sumDist < bestSum || (sumDist == bestSum && bytesLess(h, bestHash)) {
+			haveBest = true
+			bestSum = sumDist
+			bestHash = h
+			bestIdx = i
+		}
+	}
+	out := make([]int64, dim)
+	copy(out, units[bestIdx])
+	return out
+}
+
 // GeometricMedianFixed computes the deterministic fixed-point L1 Geometric Median on the
-// unit sphere via Weiszfeld's iterative reweighting (50% breakdown point against coordinated
-// outlier clusters; pure integer arithmetic, zero floats, strictly order-invariant).
+// unit sphere via Weiszfeld's iterative reweighting initialized at the order-invariant
+// discrete L1 medoid (50% breakdown point against coordinated outlier clusters; pure integer
+// arithmetic, zero floats, strictly order-invariant even under exact 180-degree cancellation).
 //
 // Mathematical basis: Weiszfeld (1937) / Vardi & Zhang (2000), solving sum_j (u_j - m)/||u_j - m|| = 0,
-// independently validated in Experiment E5 after cross-referencing pairwise unit-difference
-// relational fields (Johannes Geisen / @frintroper, Relational-Jerk-Dynamics).
+// independently validated in Experiments E5 & E7 after cross-referencing pairwise unit-difference
+// relational fields and 180-degree symmetry stasis (Johannes Geisen / @frintroper).
 func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
 	units, err := validateAndNormalizeSet(vectors)
 	if err != nil {
@@ -227,19 +275,8 @@ func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
 	dim := len(units[0])
 	n := len(units)
 
-	// Initialize from the normalized arithmetic mean.
-	sum := make([]int64, dim)
-	for i := 0; i < n; i++ {
-		for j := 0; j < dim; j++ {
-			sum[j] += units[i][j]
-		}
-	}
-	med, err := UnitNormalizeFixed(sum)
-	if err != nil {
-		// Symmetric cancellation fallback: start from first unit vector.
-		med = make([]int64, dim)
-		copy(med, units[0])
-	}
+	// Strictly order-invariant discrete L1 medoid initialization (immune to exact 180-deg cancellation).
+	med := discreteMedoidUnit(units)
 
 	const epsDist int64 = 1000 // 0.001 in Scale units prevents 0/0 singularity
 	for it := 0; it < iters; it++ {
@@ -277,4 +314,101 @@ func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
 		med = next
 	}
 	return med, nil
+}
+
+// AntipodalFractionFixed computes the strictly order-invariant fraction (in [0, Scale]) of
+// distinct unit vector pairs whose cosine similarity is <= negThresholdFixed (default -500000 = -0.50).
+// Validated in Experiment E7b (100% TPR on balanced antipodal split-brain attacks at 0% clean FPR).
+func AntipodalFractionFixed(vectors [][]int64, negThresholdFixed int64) (int64, error) {
+	units, err := validateAndNormalizeSet(vectors)
+	if err != nil {
+		return 0, err
+	}
+	if negThresholdFixed == 0 {
+		negThresholdFixed = -500000 // -0.50 cosine floor
+	}
+	n := len(units)
+	dim := len(units[0])
+	var antipodal int64
+	var pairs int64
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			pairs++
+			var dot int64
+			for d := 0; d < dim; d++ {
+				dot += MulFixed(units[i][d], units[j][d])
+			}
+			if dot <= negThresholdFixed {
+				antipodal++
+			}
+		}
+	}
+	if pairs == 0 {
+		return 0, nil
+	}
+	return (antipodal * Scale) / pairs, nil
+}
+
+// AntipodalSplitGate flags coordinated 180-degree / opposing split-brain poisoning batches
+// when AntipodalFractionFixed exceeds maxFractionFixed (default 100000 = 10% of pairs).
+func AntipodalSplitGate(vectors [][]int64, negThresholdFixed, maxFractionFixed int64) (bool, int64, SignalEvidence, error) {
+	if negThresholdFixed == 0 {
+		negThresholdFixed = -500000
+	}
+	if maxFractionFixed <= 0 {
+		maxFractionFixed = 100000 // 0.10
+	}
+	frac, err := AntipodalFractionFixed(vectors, negThresholdFixed)
+	if err != nil {
+		return false, 0, SignalEvidence{}, err
+	}
+	pass := frac < maxFractionFixed
+	detail := "no_antipodal_split"
+	if !pass {
+		detail = "antipodal_split_brain_detected"
+	}
+	ev := SignalEvidence{
+		Primitive:    "signals.antipodal_split_gate",
+		Version:      "1",
+		ParamsDigest: hashInt64s("antipodal_split_gate", negThresholdFixed, maxFractionFixed),
+		InputDigest:  digestVectorSet(vectors),
+		OutputFixed:  frac,
+		Alarm:        !pass,
+		Detail:       detail,
+	}
+	return pass, frac, ev, nil
+}
+
+// CommonAverageReferenceDebiasFixed removes a shared anisotropic common-cone component from
+// an embedding vector in pure fixed-point integer arithmetic: unit(unit(vec) - coneWeight*unit(coneRef)).
+// Validated in Experiment E9 (+76.5 pts poison quarantine TPR & -87.7 pts Top-3 contamination
+// under anisotropic common-cone collapse, cross-referencing Arobi Labs embedding anisotropy findings).
+func CommonAverageReferenceDebiasFixed(vec, coneRef []int64, coneWeightFixed int64) ([]int64, error) {
+	u, err := UnitNormalizeFixed(vec)
+	if err != nil {
+		return nil, err
+	}
+	if len(coneRef) == 0 || coneWeightFixed <= 0 {
+		return u, nil
+	}
+	if len(coneRef) != len(u) {
+		return nil, errors.New("cone reference dimension mismatch")
+	}
+	cUnit, err := UnitNormalizeFixed(coneRef)
+	if err != nil {
+		return nil, err
+	}
+	if coneWeightFixed > Scale {
+		coneWeightFixed = Scale
+	}
+	debiased := make([]int64, len(u))
+	for i := range u {
+		debiased[i] = u[i] - MulFixed(coneWeightFixed, cUnit[i])
+	}
+	out, err := UnitNormalizeFixed(debiased)
+	if err != nil {
+		// Vector was strictly collinear with coneRef; fall back safely to unit vector.
+		return u, nil
+	}
+	return out, nil
 }

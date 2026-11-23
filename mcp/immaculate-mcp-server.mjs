@@ -261,7 +261,23 @@ function handleToolCall(name, args = {}) {
         vec,
         contentDigest: sha256Hex(text),
       };
-      if (state.activeMemories.length >= 2) {
+      if (state.activeMemories.length === 1) {
+        // Variance-calibrated cold-start guard (tau^2) closes the k=1->k=2 base-case gap (Experiment E6b).
+        const cos = dot(vec, state.activeMemories[0].vec);
+        const pairThresh = QUARANTINE_COS * QUARANTINE_COS;
+        if (cos < pairThresh) {
+          state.quarantinedMemories.push({ ...record, cosToCentroid: cos });
+          return {
+            admitted: false,
+            quarantined: true,
+            reasonCode: 'MEMORY_COLD_START_PAIRWISE_QUARANTINE',
+            recordId: id,
+            cosToCentroid: Number(cos.toFixed(6)),
+            activeCount: state.activeMemories.length,
+            quarantinedCount: state.quarantinedMemories.length,
+          };
+        }
+      } else if (state.activeMemories.length >= 2) {
         const dim = vec.length;
         const sum = new Array(dim).fill(0);
         for (const m of state.activeMemories) for (let j = 0; j < dim; j++) sum[j] += m.vec[j];

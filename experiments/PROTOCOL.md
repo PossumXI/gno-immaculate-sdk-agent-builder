@@ -91,3 +91,71 @@ To avoid confirmation bias, we cross-referenced external non-local discrete dyna
 ### Hypotheses & Kill Criteria
 - **H5a (Honest Negative Test — 3rd-Order Discrete Jerk):** Compare raw 3rd-order discrete jerk ($\Delta^3 x_t$) and Hampel+EMA-smoothed jerk against our `HampelCusum` on clean traffic, $+10\sigma$ spikes, accelerating runaway spend ($2(t-19)^{2.5}$), and stealth $+2\sigma$ step drift (`200` seeded episodes). A candidate must beat `HampelCusum` on runaway detection without degrading clean/spike FPR to earn inclusion; otherwise it is **REJECTED / KILLED**.
 - **H5b (Positive Discovery — Fixed-Point Weiszfeld L1 Geometric Median):** Recognizing that $\sum_j (u_j - m)/\|u_j - m\| = 0$ is the exact first-order optimality condition of the L1 Geometric Median (Weiszfeld 1937; Vardi & Zhang 2000; 50% breakdown point), test whether pure fixed-point `GeometricMedianFixed` beats both arithmetic mean centroid cosine and raw pairwise tension $\|J_i\|$ by **$\ge 0.05$ ROC-AUC** when auditing an unguarded memory batch with **35% coordinated adversarial contamination** (`300` trials in $\mathbb{R}^{12}$).
+
+---
+
+## Experiment E6 — Cold-Start Base-Case Induction Gap (`k = 1 -> k = 2`) in Governed MemoryVault
+
+### Motivation & Attribution
+Cross-referencing Johannes Geisen's (`@frintroper/horse_fallacy`, MIT) formalization of the `k = 1 -> k = 2` inductive overlap gap exposed a real base-case vulnerability in `MemoryVault` v1: setting `MinTrustedAnchors = 2` leaves record #2 completely unchecked during cold start. An off-manifold poison memory injected at step 2 shifts `centroidSum` halfway toward the attacker, simultaneously admitting poison and causing subsequent clean memories (steps 3..12) to fail cosine alignment.
+
+### Experimental Design (`300` seeded episodes in $\mathbb{R}^{16}$, `seed = 20261123`)
+- **Attack Arm:** Record 1 is clean on-manifold; Record 2 is adversarial off-manifold poison; Records 3..12 are 10 clean on-manifold memories.
+- **Clean Control Arm:** All 12 records are clean on-manifold.
+- **Baseline:** `MemoryVaultV1` (`MinTrustedAnchors = 2`).
+- **Treatment:** `ColdStartPairwiseGuard` (`MinTrustedAnchors = 1` pairwise cosine gate against record 1 or optional owner-pinned `GenesisAnchor`).
+
+### Pre-Registered Criterion
+- **H6:** `ColdStartPairwiseGuard` blocks **$\ge 95\%$** of step-2 cold-start poison injections (vs `0%` for v1), cuts downstream clean false rejections by **$\ge 80\%$**, and keeps step-2 clean control false rejections **$\le 2\%$**.
+- **Amendment H6b (Variance-Calibrated Pairwise Threshold $\tau_{\text{pair}} = \tau^2$ & Optional `GenesisAnchor`):** After E6 revealed that comparing two independent noisy samples ($v_1, v_2$) doubles angular variance ($\mathbb{E}[\cos(v_1, v_2)] = \mathbb{E}[\cos(v, \mu)]^2$, yielding `40.67%` step-2 clean FPR at uncalibrated $\tau = 0.55$), test **variance-calibrated $\tau_{\text{pair}} = \tau^2 = 0.3025$** (and owner-pinned `GenesisAnchor` at $\tau = 0.55$): must block **$\ge 90\%$** of step-2 poison (and `100%` with `GenesisAnchor`), cut downstream clean false rejects from `63.93%` to **$\le 5\%$**, and keep step-2 clean FPR **$\le 5\%$** (`0%` with `GenesisAnchor`).
+
+---
+
+## Experiment E7 — Exact $180^\circ$ Antipodal Symmetry-Stasis & Order-Invariant L1 Medoid Initialization
+
+### Motivation & Attribution
+Cross-referencing `@frintroper/Symmetry-No-Symmetry` ("exact $180^\circ$ opposing vectors cancel to static equilibrium"; clean-room MIT analysis, zero RIPL code copied) exposed two concrete defects in `GeometricMedianFixed` v1:
+1. Initializing Weiszfeld from the arithmetic mean falls back to `units[0]` on exact $180^\circ$ cancellation (`sum == 0`), **breaking validator order invariance** under permutation.
+2. Under balanced antipodal / split-brain poisoning ($+u, -u$), arithmetic mean collapses toward $\mathbf{0}$ and can trap unguarded Weiszfeld on a symmetry saddle.
+
+### Experimental Design (`300` trials in $\mathbb{R}^{12}$, `seed = 20261123`)
+- **Part E7a (Permutation Invariance under Exact $180^\circ$ Cancellation):** 100 random permutations of exact-cancellation antipodal batches comparing v1 (`units[0]` fallback) vs **Discrete L1 Medoid Initialization** (`MedoidInitGeometricMedianFixed`, tie-breaking by canonical vector SHA-256).
+- **Part E7b (Antipodal Split-Brain & 40% Coordinated Poisoning):** Compare Arithmetic Mean, `GeometricMedianFixed` v1, and `MedoidInitGeometricMedianFixed` + `AntipodalFractionFixed` (fraction of pairs with $\cos(u_i, u_j) \le -0.50$).
+
+### Pre-Registered Criteria
+- **H7a:** `MedoidInitGeometricMedianFixed` achieves **0** permutation divergences on exact-cancellation batches (eliminating v1's order dependence).
+- **H7b:** `AntipodalFractionFixed` detects **$\ge 95\%$** of balanced antipodal split-brain batches at **`0%` clean FPR**, and `MedoidInitGeometricMedianFixed` beats arithmetic-mean ROC-AUC by **$\ge 0.10$** under 40% coordinated poisoning.
+
+---
+
+## Experiment E8 — Filter Opacity / Smoothing Masking under Pulsed Adversarial Attacks
+
+### Motivation & Attribution
+Cross-referencing `@frintroper/Astrometric-Filter-Opacity` (warning that aggressive smoothing filters can silently erase real non-linear anomalies as "noise"; clean-room MIT evaluation, zero RIPL code copied) revealed an adversarial evasion vector against `HampelCusum` v1: a **pulsed 1-in-4 micro-burst drain** ($+4.5\sigma$ every 4th step, 3 clean steps between bursts) is repeatedly clipped by `Hampel(w=5)`'s window median, causing **Filter Opacity**!
+
+### Experimental Design (`300` episodes × 60 steps, `seed = 20261123`)
+Compare 5 detectors across 4 regimes (Clean, Single $+10\sigma$ Spike, Sustained $+2\sigma$ Shift, Pulsed 1-in-4 $+4.5\sigma$ Drain):
+1. `RawCUSUM`
+2. Raw 2nd-Order Acceleration (`Δ²x`, calibrated at 5% clean FPR)
+3. Raw 3rd-Order Jerk (`Δ³x`, calibrated at 5% clean FPR)
+4. `HampelCusum` v1 (single-channel)
+5. **`OpacityAwareHampelCusum`** *(Treatment)*: Dual-Channel `HampelCusum` (Channel A) + Bounded Rolling Positive-Clip Counter (Channel B: alarms when $\ge 3$ positive Hampel clips above $+3\sigma$ occur within any rolling window of $W = 12$ steps).
+
+### Pre-Registered Criterion
+- **H8:** `OpacityAwareHampelCusum` achieves **$\ge 95\%$ TPR** on pulsed 1-in-4 filter-evading attacks (beating `HampelCusum` v1 by **$\ge 50$ percentage points**), while keeping single $+10\sigma$ spike FPR **$\le 10\%$** and sustained $+2\sigma$ shift TPR **$\ge 95\%$**. (Raw $\Delta^2 x$ and $\Delta^3 x$ are evaluated honestly and killed if they fail spike immunity or drift recall.)
+- **Amendment H8b (True Filter-Opacity Period $P = 6 > w = 5$ & $4\sigma$ Channel-B Calibration):** E8a revealed that period $P=4 \le w=5$ places two pulses inside one 5-sample window (inflating MAD so `HampelCusum` v1 already caught `98.3%`), while a $3\sigma$ Channel-B threshold slightly raised clean FPR (`9%`). Test true **Filter Opacity** where pulse period **$P = 6 > w = 5$** (`+6σ` every 6th step — strictly $\le 1$ pulse per 5-sample Hampel window) using Channel B **$\ge 3$ positive clips with $z > 4.0$ in a rolling window of $W = 24$ steps**: must achieve **$\ge 95\%$ TPR** on period-6 filter-evading attacks (beating `HampelCusum` v1 by **$\ge 50$ percentage points**), while adding **$\le 1\%$** clean FPR and keeping single $+10\sigma$ spike FPR **$\le 6\%$** and $+2\sigma$ drift TPR **$\ge 95\%$**.
+
+---
+
+## Experiment E9 — Anisotropic Common-Cone Embeddings: Common-Average-Reference (CAR) Debiasing & Dispersion-Gated RRF
+
+### Motivation & Attribution
+Real dense embedding models (such as `nomic-embed-text-v1.5`, observed in Arobi Labs' embedding coherence evaluations and Mu & Viswanath 2018 "All-but-the-Top") live inside a narrow anisotropic cone where even unrelated/poisoned texts share cosine similarity `0.55–0.70`, lifting adversarial vectors above fixed raw-cosine quarantine thresholds.
+
+### Experimental Design (`300` episodes in $\mathbb{R}^{16}$, `seed = 20261123`)
+All 16 embeddings (12 clean + 4 keyword-stuffed poison) share a strong anisotropic common-cone component ($\mu_{\text{cone}}$ with weight `0.78`, yielding background mixed cosine $\approx 0.60$). Compare:
+1. `RawMemoryVault` (raw unit cosine against $\cos \ge 0.55$ threshold + Overlap-Weighted Hybrid RRF).
+2. **`CAR_DebiasedMemoryVault`** *(Treatment)*: Fixed-point Common-Average-Reference cone subtraction (`u' = unit(u - coneRef)`) before spherical quarantine and dense cosine scoring, paired with **Dispersion-Gated Hybrid RRF** (scaling dense weight down when query score dispersion `max - median` collapses).
+
+### Pre-Registered Criterion
+- **H9:** Under anisotropic cone collapse, `CAR_DebiasedMemoryVault` improves poison quarantine TPR by **$\ge 40$ percentage points** over `RawMemoryVault` while maintaining **$\ge 95\%$** Top-1 exact-target recall and **$\le 2\%$** Top-3 poison contamination.

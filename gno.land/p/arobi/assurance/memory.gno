@@ -114,11 +114,16 @@ func (p MemoryRecallProof) Digest() [32]byte {
 // MemoryVaultConfig configures a consensus-safe Governed MemoryVault.
 type MemoryVaultConfig struct {
 	VaultID                  string
-	QuarantineThresholdFixed int64 // minimum cosine vs trusted centroid in [-Scale, Scale]; default 550000 (0.55)
-	MinTrustedAnchors        int   // records required before quarantine activates; default 2
-	HalfLifeBlocks           int64 // linear-decay half-life in blocks (0 = no decay)
-	RRFK                     int64 // Reciprocal Rank Fusion k constant (default 60)
-	MaxActiveRecords         int   // bounded capacity for deterministic GnoVM gas (default 256)
+	QuarantineThresholdFixed int64   // minimum cosine vs trusted centroid in [-Scale, Scale]; default 550000 (0.55)
+	MinTrustedAnchors        int     // records required before centroid quarantine activates; default 2
+	HalfLifeBlocks           int64   // linear-decay half-life in blocks (0 = no decay)
+	RRFK                     int64   // Reciprocal Rank Fusion k constant (default 60)
+	MaxActiveRecords         int     // bounded capacity for deterministic GnoVM gas (default 256)
+	EnableColdStartGuard     bool    // guards k=1->k=2 via variance-calibrated tau^2 pairwise cosine (Experiment E6b)
+	GenesisAnchor            []int64 // optional owner-pinned domain unit anchor guarding k=1..2 at full tau (Experiment E6b)
+	ConeRef                  []int64 // optional anisotropic common-cone reference for fixed-point CAR debiasing (Experiment E9)
+	ConeWeightFixed          int64   // CAR cone subtraction weight in [0, Scale] (e.g. 780000 = 0.78; Experiment E9)
+	DispersionGateFixed      int64   // dense margin floor below which lexical RRF boosts 2x (default 80000 when CAR active)
 }
 
 // MemoryVault is a consensus-safe, poison-resistant episodic/semantic memory store for Gno
@@ -129,6 +134,8 @@ type MemoryVault struct {
 	nextID        uint64
 	dim           int
 	centroidSum   []int64
+	genesisUnit   []int64
+	coneUnit      []int64
 	active        []MemoryRecord
 	quarantined   []MemoryRecord
 	vaultRootHash [32]byte
@@ -151,7 +158,28 @@ func NewMemoryVault(cfg MemoryVaultConfig) *MemoryVault {
 	if cfg.MaxActiveRecords <= 0 {
 		cfg.MaxActiveRecords = 256
 	}
-	return &MemoryVault{cfg: cfg}
+	v := &MemoryVault{cfg: cfg}
+	if len(cfg.ConeRef) > 0 && cfg.ConeWeightFixed > 0 {
+		if cu, err := signals.UnitNormalizeFixed(cfg.ConeRef); err == nil {
+			v.coneUnit = cu
+			if v.cfg.DispersionGateFixed <= 0 {
+				v.cfg.DispersionGateFixed = 80000 // 0.08 dense margin floor
+			}
+		}
+	}
+	if len(cfg.GenesisAnchor) > 0 {
+		if gu, err := v.prepareUnit(cfg.GenesisAnchor); err == nil {
+			v.genesisUnit = gu
+		}
+	}
+	return v
+}
+
+func (v *MemoryVault) prepareUnit(vec []int64) ([]int64, error) {
+	if len(v.coneUnit) > 0 && v.cfg.ConeWeightFixed > 0 {
+		return signals.CommonAverageReferenceDebiasFixed(vec, v.coneUnit, v.cfg.ConeWeightFixed)
+	}
+	return signals.UnitNormalizeFixed(vec)
 }
 
 // ActiveCount returns the number of admitted trusted memory records.
@@ -249,7 +277,7 @@ func (v *MemoryVault) Ingest(
 	if kind == "" {
 		kind = MemoryKindEpisodic
 	}
-	unit, err := signals.UnitNormalizeFixed(embedding)
+	unit, err := v.prepareUnit(embedding)
 	if err != nil {
 		return MemoryIngestReceipt{}, err
 	}
@@ -281,16 +309,40 @@ func (v *MemoryVault) Ingest(
 	}
 
 	coherence := signals.Scale
-	if len(v.active) >= v.cfg.MinTrustedAnchors && v.cfg.QuarantineThresholdFixed > -signals.Scale {
-		centroid, ok := v.trustedCentroidUnit()
-		if ok {
-			cos, cErr := CosineFixed(unit, centroid)
+	if v.cfg.QuarantineThresholdFixed > -signals.Scale {
+		var refUnit []int64
+		thresh := v.cfg.QuarantineThresholdFixed
+		reason := "MEMORY_SPHERICAL_QUARANTINE"
+		hasRef := false
+
+		// 1. Owner-pinned GenesisAnchor guards cold-start k=1..2 at full threshold (Experiment E6b).
+		if len(v.genesisUnit) == v.dim && len(v.active) < v.cfg.MinTrustedAnchors {
+			refUnit = v.genesisUnit
+			reason = "MEMORY_COLD_START_GENESIS_QUARANTINE"
+			hasRef = true
+		} else if v.cfg.EnableColdStartGuard && len(v.active) == 1 && v.cfg.MinTrustedAnchors >= 2 {
+			// 2. Variance-calibrated pairwise guard (tau^2) closes the k=1->k=2 base-case gap (Experiment E6b).
+			refUnit = v.active[0].UnitVec
+			if thresh > 0 {
+				thresh = signals.MulFixed(thresh, thresh)
+			}
+			reason = "MEMORY_COLD_START_PAIRWISE_QUARANTINE"
+			hasRef = true
+		} else if len(v.active) >= v.cfg.MinTrustedAnchors {
+			if centroid, ok := v.trustedCentroidUnit(); ok {
+				refUnit = centroid
+				hasRef = true
+			}
+		}
+
+		if hasRef {
+			cos, cErr := CosineFixed(unit, refUnit)
 			if cErr != nil {
 				return MemoryIngestReceipt{}, cErr
 			}
 			rec.CosToCentroid = cos
 			coherence = cos
-			if cos < v.cfg.QuarantineThresholdFixed {
+			if cos < thresh {
 				rec.Quarantined = true
 				v.quarantined = append(v.quarantined, rec)
 				return MemoryIngestReceipt{
@@ -298,7 +350,7 @@ func (v *MemoryVault) Ingest(
 					RecordDigest:       rec.Digest(),
 					Admitted:           false,
 					Quarantined:        true,
-					ReasonCode:         "MEMORY_SPHERICAL_QUARANTINE",
+					ReasonCode:         reason,
 					CosToCentroidFixed: cos,
 					CoherenceFixed:     coherence,
 				}, nil
@@ -353,7 +405,7 @@ func (v *MemoryVault) RetrieveTopK(
 	if k <= 0 {
 		return nil, MemoryRecallProof{}, errors.New("k must be positive")
 	}
-	qUnit, err := signals.UnitNormalizeFixed(queryEmbedding)
+	qUnit, err := v.prepareUnit(queryEmbedding)
 	if err != nil {
 		return nil, MemoryRecallProof{}, err
 	}
@@ -410,9 +462,18 @@ func (v *MemoryVault) RetrieveTopK(
 		lexRank[lexOrder[rank]] = rank + 1
 	}
 
-	// Overlap-Weighted Reciprocal Rank Fusion (RRF, k = cfg.RRFK) + optional recency decay.
+	// Overlap-Weighted Reciprocal Rank Fusion (RRF, k = cfg.RRFK) + Dispersion Gating + recency decay.
 	// Weighting the lexical RRF term by fractional query-term coverage preserves exact-ID
-	// precision on small-to-medium vaults where plain unweighted RRF(k=60) flattens rank 1 vs 2.
+	// precision on small-to-medium vaults, and when DispersionGateFixed is configured and dense
+	// spread (max - median) collapses under anisotropy, lexical weight boosts 2x (Experiment E9).
+	lexBoost := int64(1)
+	if v.cfg.DispersionGateFixed > 0 && n >= 2 {
+		maxDense := denseScores[denseOrder[0]]
+		medDense := denseScores[denseOrder[n/2]]
+		if maxDense-medDense < v.cfg.DispersionGateFixed {
+			lexBoost = 2
+		}
+	}
 	scored := make([]ScoredMemory, n)
 	rrfK := v.cfg.RRFK
 	for i := 0; i < n; i++ {
@@ -420,7 +481,7 @@ func (v *MemoryVault) RetrieveTopK(
 		rrfDense := signals.Scale / (rrfK + int64(denseRank[i]))
 		rrfLex := int64(0)
 		if lexScores[i] > 0 {
-			rrfLex = signals.MulFixed(signals.Scale/(rrfK+int64(lexRank[i])), lexScores[i])
+			rrfLex = lexBoost * signals.MulFixed(signals.Scale/(rrfK+int64(lexRank[i])), lexScores[i])
 		}
 		rrf := rrfDense + rrfLex
 
@@ -607,4 +668,14 @@ func (v *MemoryVault) AuditAndPurgeWithGeometricMedian(thresholdFixed int64) (in
 	v.active = kept
 	v.centroidSum = newSum
 	return purged, nil
+}
+
+// AuditAntipodalSplit evaluates the active memory vault for balanced 180-degree / opposing
+// split-brain poisoning using AntipodalSplitGate (Experiment E7b).
+func (v *MemoryVault) AuditAntipodalSplit(negThresholdFixed, maxFractionFixed int64) (bool, int64, signals.SignalEvidence, error) {
+	if len(v.active) < 2 {
+		return true, 0, signals.SignalEvidence{Primitive: "signals.antipodal_split_gate", Version: "1", Detail: "insufficient_records"}, nil
+	}
+	vecs := v.ActiveEmbeddings()
+	return signals.AntipodalSplitGate(vecs, negThresholdFixed, maxFractionFixed)
 }

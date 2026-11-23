@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T04:57:30.422Z",
+  "generatedAt": "2026-11-23T21:25:18.498Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -128,7 +128,10 @@
       "p/arobi/signals::TestRobustSmootherRemovesSpikesAndMatchesBatchCausally": 10367298,
       "p/arobi/signals::TestDriftDetectorsCatchShiftWhileHampelCusumIgnoresSingleSpike": 11673525,
       "p/arobi/signals::TestSphericalCoherenceOrderInvarianceAndPoisoningDetection": 4845028,
-      "p/arobi/signals::TestGeometricMedianResistsCoordinatedOutlierCluster": 9546885,
+      "p/arobi/signals::TestGeometricMedianResistsCoordinatedOutlierCluster": 13349714,
+      "p/arobi/signals::TestGeometricMedianExact180CancellationIsOrderInvariant": 13455436,
+      "p/arobi/signals::TestOpacityAwareHampelCusumCatchesPeriod6DrainAndIgnoresSingleSpike": 12973192,
+      "p/arobi/signals::TestCommonAverageReferenceDebiasFixedRemovesAnisotropicCone": 1088527,
       "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65379281,
       "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
       "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
@@ -143,12 +146,14 @@
       "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
       "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
       "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
-      "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9858079,
-      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 13912608,
-      "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14418924,
-      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56157100,
-      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 7930440,
-      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42321831,
+      "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9930790,
+      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 14021212,
+      "p/arobi/assurance::TestMemoryVaultGeometricMedianBatchPurgeAndTrustAutoHalt": 11910071,
+      "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14548452,
+      "p/arobi/assurance::TestMemoryVaultColdStartGenesisAnchorAndAnisotropicCARDebiasing": 9361888,
+      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56365756,
+      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 11152124,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42423720,
       "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29540006,
       "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
     },
@@ -177,7 +182,7 @@
     "singleActionGas": {
       "governedActionWithProofs": 2659102,
       "adaptiveDriftAndCoherenceAction": 4971378,
-      "familiarMemoryAndCapability": 14418924
+      "familiarMemoryAndCapability": 14548452
     },
     "verdicts": {
       "H3_logarithmic_proof_and_bounded_gas": "PASS"
@@ -211,7 +216,7 @@
         "poisonQuarantineTPR_pct": 100
       }
     },
-    "familiarMemoryAndCapabilityGas": 14418924,
+    "familiarMemoryAndCapabilityGas": 14548452,
     "verdicts": {
       "H4a_poison_quarantine_ge_95pct_and_contamination_cut_ge_90pct": "PASS",
       "H4b_hybrid_rrf_clean_top1_beats_dense_and_stays_poison_free": "PASS",
@@ -247,6 +252,112 @@
     "verdicts": {
       "H5a_3rd_order_jerk_killed_vs_hampel_cusum": "KILLED_JERK_KEPT_HAMPEL_CUSUM",
       "H5b_geometric_median_beats_centroid_and_rjd_by_0_05_auc": "PASS"
+    }
+  },
+  "E6_coldStartInductionGap": {
+    "trials": 300,
+    "MemoryVaultV1_minAnchors2": {
+      "step2PoisonBlockTPR_pct": 0,
+      "downstreamCleanFalseReject_pct": 36.03
+    },
+    "NaiveColdStart_tau055": {
+      "step2PoisonBlockTPR_pct": 100,
+      "downstreamCleanFalseReject_pct": 1.03,
+      "step2CleanControlFPR_pct": 9.33
+    },
+    "VarianceCalibratedColdStart_tauSq": {
+      "pairThreshold": 0.30250000000000005,
+      "step2PoisonBlockTPR_pct": 97,
+      "downstreamCleanFalseReject_pct": 1.2,
+      "step2CleanControlFPR_pct": 0.33
+    },
+    "GenesisAnchorColdStart": {
+      "step2PoisonBlockTPR_pct": 100,
+      "downstreamCleanFalseReject_pct": 0.4,
+      "step2CleanControlFPR_pct": 0
+    },
+    "verdicts": {
+      "H6a_naive_uncalibrated_tau055_rejected_due_to_variance_doubling": "PASS",
+      "H6b_variance_calibrated_tauSq_and_genesis_anchor": "PASS"
+    }
+  },
+  "E7_antipodalSymmetryAndMedoidInit": {
+    "exact180CancellationPermutations100": {
+      "v1_units0Fallback_divergences": 50,
+      "medoidInit_divergences": 0
+    },
+    "antipodalSplitBrain300": {
+      "antipodalGuardTPR_pct": 100,
+      "cleanBatchFPR_pct": 0
+    },
+    "coordinated40pctAntipodalPoisonAUC": {
+      "ArithmeticMeanCentroid_AUC": 0.9969,
+      "MedoidInitGeometricMedian_AUC": 0.9933,
+      "aucGain": -0.0036
+    },
+    "verdicts": {
+      "H7a_zero_permutation_divergence_under_180_cancellation": "PASS",
+      "H7b_antipodal_split_brain_detection_ge_95pct_at_0pct_fpr": "PASS"
+    }
+  },
+  "E8_filterOpacityPulsedAttacks": {
+    "episodes": 300,
+    "detectors": {
+      "raw_cusum": {
+        "cleanFPR_pct": 5.3,
+        "singleSpike10SigmaFPR_pct": 100,
+        "sustained2SigmaDriftTPR_pct": 100,
+        "pulsed1in4DrainTPR_pct": 100,
+        "pulsed1in6OpacityDrainTPR_pct": 100
+      },
+      "raw_accel_d2": {
+        "cleanFPR_pct": 4.3,
+        "singleSpike10SigmaFPR_pct": 100,
+        "sustained2SigmaDriftTPR_pct": 5,
+        "pulsed1in4DrainTPR_pct": 100,
+        "pulsed1in6OpacityDrainTPR_pct": 100
+      },
+      "raw_jerk_d3": {
+        "cleanFPR_pct": 2.3,
+        "singleSpike10SigmaFPR_pct": 100,
+        "sustained2SigmaDriftTPR_pct": 3.7,
+        "pulsed1in4DrainTPR_pct": 100,
+        "pulsed1in6OpacityDrainTPR_pct": 100
+      },
+      "hampel_cusum": {
+        "cleanFPR_pct": 6.3,
+        "singleSpike10SigmaFPR_pct": 8.7,
+        "sustained2SigmaDriftTPR_pct": 100,
+        "pulsed1in4DrainTPR_pct": 99.7,
+        "pulsed1in6OpacityDrainTPR_pct": 72.3
+      },
+      "opacity_aware_hampel_cusum": {
+        "cleanFPR_pct": 6.3,
+        "singleSpike10SigmaFPR_pct": 8.7,
+        "sustained2SigmaDriftTPR_pct": 100,
+        "pulsed1in4DrainTPR_pct": 99.7,
+        "pulsed1in6OpacityDrainTPR_pct": 100
+      }
+    },
+    "verdicts": {
+      "H8b_opacity_aware_closes_period6_hampel_blindspot_without_spike_regression": "PASS"
+    }
+  },
+  "E9_anisotropicCommonConeCAR": {
+    "trials": 300,
+    "coneWeight": 0.78,
+    "RawMemoryVault": {
+      "poisonQuarantineTPR_pct": 23.5,
+      "top1ExactTargetRecall_pct": 100,
+      "top3PoisonContamination_pct": 87.7
+    },
+    "CAR_DebiasedMemoryVault": {
+      "poisonQuarantineTPR_pct": 100,
+      "top1ExactTargetRecall_pct": 99.7,
+      "top3PoisonContamination_pct": 0
+    },
+    "verdicts": {
+      "H9_car_debiasing_rescues_anisotropic_quarantine_and_recall": "PASS"
     }
   }
 }

@@ -177,3 +177,90 @@ func TestGeometricMedianResistsCoordinatedOutlierCluster(t *testing.T) {
 		uassert.Equal(t, gm[j], gmRev[j])
 	}
 }
+
+func TestGeometricMedianExact180CancellationIsOrderInvariant(t *testing.T) {
+	// Exact 180-degree symmetric cancellation: sum == 0.
+	// Medoid initialization + canonical SHA-256 tie-break guarantees zero order divergence (E7a).
+	u := []int64{Scale, 0, 0, 0}
+	neg := []int64{-Scale, 0, 0, 0}
+	b1 := [][]int64{u, u, neg, neg}
+	b2 := [][]int64{neg, u, neg, u}
+	b3 := [][]int64{neg, neg, u, u}
+
+	gm1, err := GeometricMedianFixed(b1, 8)
+	uassert.NoError(t, err)
+	gm2, err := GeometricMedianFixed(b2, 8)
+	uassert.NoError(t, err)
+	gm3, err := GeometricMedianFixed(b3, 8)
+	uassert.NoError(t, err)
+	for j := range gm1 {
+		uassert.Equal(t, gm1[j], gm2[j])
+		uassert.Equal(t, gm1[j], gm3[j])
+	}
+
+	// AntipodalSplitGate catches balanced 180-degree split-brain (E7b) with 0 false alarms on clean sets.
+	passSplit, fracSplit, evSplit, err := AntipodalSplitGate(b1, -500000, 100000)
+	uassert.NoError(t, err)
+	uassert.False(t, passSplit)
+	uassert.True(t, evSplit.Alarm)
+	uassert.True(t, fracSplit >= 500000) // 4/6 pairs are antipodal = 66.6%
+
+	clean := [][]int64{
+		{990000, 141000, 0, 0},
+		{995000, 100000, 0, 0},
+		{985000, 172000, 0, 0},
+	}
+	passClean, fracClean, evClean, err := AntipodalSplitGate(clean, -500000, 100000)
+	uassert.NoError(t, err)
+	uassert.True(t, passClean)
+	uassert.False(t, evClean.Alarm)
+	uassert.Equal(t, int64(0), fracClean)
+}
+
+func TestOpacityAwareHampelCusumCatchesPeriod6DrainAndIgnoresSingleSpike(t *testing.T) {
+	base := Baseline{MeanFixed: 100 * Scale, SDFixed: 15 * Scale}
+	oa, err := NewOpacityAwareHampelCusum(base, 5*Scale, Scale, 5, 3*Scale, 4*Scale, 24, 3)
+	uassert.NoError(t, err)
+
+	// 1. Single isolated +10sigma spike: clamped, clipCount == 1 < 3 -> NO alarm!
+	for i := 0; i < 12; i++ {
+		val := int64(100) * Scale
+		if i == 6 {
+			val = 250 * Scale // +10sigma transient spike
+		}
+		alarm, _, _, _ := oa.Update(val)
+		uassert.False(t, alarm)
+	}
+	uassert.Equal(t, 1, oa.ClipCount())
+
+	// 2. Reset and inject period-6 filter-evading bursts (+6sigma every 6th step, P=6 > w=5).
+	oa.Reset()
+	trippedOpacity := false
+	for i := 0; i < 24; i++ {
+		val := int64(100) * Scale
+		if i >= 5 && (i-5)%6 == 0 {
+			val = 190 * Scale // +6sigma burst
+		}
+		alarm, _, ch, ev := oa.Update(val)
+		if alarm && (ch == "opacity_innovation_channel" || ch == "dual_cusum_and_opacity") {
+			trippedOpacity = true
+			uassert.True(t, ev.Alarm)
+		}
+	}
+	uassert.True(t, trippedOpacity)
+}
+
+func TestCommonAverageReferenceDebiasFixedRemovesAnisotropicCone(t *testing.T) {
+	// Shared anisotropic cone along e0 (weight 0.78); clean along +e1, poison along -e1.
+	cone := []int64{Scale, 0, 0, 0}
+	cleanRaw := []int64{780000, 625780, 0, 0}
+	poisonRaw := []int64{780000, -625780, 0, 0}
+
+	cleanDeb, err := CommonAverageReferenceDebiasFixed(cleanRaw, cone, 780000)
+	uassert.NoError(t, err)
+	poisonDeb, err := CommonAverageReferenceDebiasFixed(poisonRaw, cone, 780000)
+	uassert.NoError(t, err)
+	// After CAR cone subtraction, clean points along +e1 and poison points along -e1 (cos == -1)!
+	uassert.True(t, cleanDeb[1] > 990000)
+	uassert.True(t, poisonDeb[1] < -990000)
+}
