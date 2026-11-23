@@ -1,0 +1,181 @@
+{
+  "generatedAt": "2026-11-23T04:06:33.619Z",
+  "seed": 20261123,
+  "E1_fixedPointFidelity": {
+    "primitives": {
+      "robustSmooth": {
+        "mae": 0.000003486,
+        "maxErr": 0.000006565,
+        "samples": 20000
+      },
+      "cusum": {
+        "mae": 0.000001913,
+        "maxErr": 0.00001297,
+        "samples": 20000
+      },
+      "pageHinkley": {
+        "mae": 0.000007238,
+        "maxErr": 0.0001065,
+        "samples": 20000
+      },
+      "meanResultantLength": {
+        "mae": 0.000002821,
+        "maxErr": 0.00000435,
+        "samples": 500
+      },
+      "meanPairwiseCosine": {
+        "mae": 0.000002392,
+        "maxErr": 0.000004462,
+        "samples": 500
+      }
+    },
+    "permutationDiffs": 0,
+    "crossLanguageParity": {
+      "verifiedFields": 5,
+      "mismatches": [],
+      "jsGolden": {
+        "GOLDEN_PROJ": "bf8ca7e3f018c7f8685aff7eeb6083516da0fc89c2f6da9499fdde9153fbac61",
+        "GOLDEN_WARRANT": "1a409b175eac0180b369de569da1719d30475a2cd35ef4fb6b84bbda4bd56f90",
+        "GOLDEN_RECEIPT_LEAF": "867616e15be829fdc6c6772d3082166d52d4560e028f748638427037d7957111",
+        "GOLDEN_CLOSURE_LEAF": "5252817e43e16c47f303c9868ca655925d2124890079f4019b8e2d6b33794060",
+        "GOLDEN_ROOT": "0063b52374e4586986e90d50fd5b6cdd3615a94b63d98cd639fa1ee771555443"
+      },
+      "gnoGolden": {
+        "GOLDEN_PROJ": "bf8ca7e3f018c7f8685aff7eeb6083516da0fc89c2f6da9499fdde9153fbac61",
+        "GOLDEN_WARRANT": "1a409b175eac0180b369de569da1719d30475a2cd35ef4fb6b84bbda4bd56f90",
+        "GOLDEN_RECEIPT_LEAF": "867616e15be829fdc6c6772d3082166d52d4560e028f748638427037d7957111",
+        "GOLDEN_CLOSURE_LEAF": "5252817e43e16c47f303c9868ca655925d2124890079f4019b8e2d6b33794060",
+        "GOLDEN_ROOT": "0063b52374e4586986e90d50fd5b6cdd3615a94b63d98cd639fa1ee771555443"
+      }
+    },
+    "verdicts": {
+      "H1a_fidelity_lt_1e4": "PASS",
+      "H1b_order_invariance_and_gno_js_parity": "PASS"
+    }
+  },
+  "E2_adversarialBenchmark": {
+    "calibration": {
+      "quietEpisodes": 400,
+      "stepsPerEpisode": 60,
+      "targetFPR": 0.05,
+      "emaThreshold": 125.393,
+      "rawCusumThreshold": 2.656336,
+      "hampelCusumThreshold": 3.002874,
+      "coherenceThreshold": 0.72
+    },
+    "architectures": {
+      "Unprotected": {
+        "S1_cleanFPR_pct": 0,
+        "S1_coherenceFalseReject_pct": 0,
+        "S2_spikeFPR_pct": 0,
+        "S3_stealthDriftTPR_pct": 0,
+        "S3_medianDelaySteps": null,
+        "S4_memoryPoisonBlockTPR_pct": 0,
+        "S5_escalationBlock_pct": 0,
+        "S5_offlineProofVerified_pct": 0
+      },
+      "StaticCapOnly": {
+        "S1_cleanFPR_pct": 0,
+        "S1_coherenceFalseReject_pct": 0,
+        "S2_spikeFPR_pct": 0,
+        "S3_stealthDriftTPR_pct": 0,
+        "S3_medianDelaySteps": null,
+        "S4_memoryPoisonBlockTPR_pct": 0,
+        "S5_escalationBlock_pct": 33,
+        "S5_offlineProofVerified_pct": 0
+      },
+      "NaiveEMA": {
+        "S1_cleanFPR_pct": 4,
+        "S1_coherenceFalseReject_pct": 0,
+        "S2_spikeFPR_pct": 91,
+        "S3_stealthDriftTPR_pct": 100,
+        "S3_medianDelaySteps": 7,
+        "S4_memoryPoisonBlockTPR_pct": 0,
+        "S5_escalationBlock_pct": 33,
+        "S5_offlineProofVerified_pct": 0
+      },
+      "RawCUSUM": {
+        "S1_cleanFPR_pct": 5,
+        "S1_coherenceFalseReject_pct": 0,
+        "S2_spikeFPR_pct": 100,
+        "S3_stealthDriftTPR_pct": 100,
+        "S3_medianDelaySteps": 2,
+        "S4_memoryPoisonBlockTPR_pct": 0,
+        "S5_escalationBlock_pct": 33,
+        "S5_offlineProofVerified_pct": 0
+      },
+      "ImmaculateFull": {
+        "S1_cleanFPR_pct": 8,
+        "S1_coherenceFalseReject_pct": 0,
+        "S2_spikeFPR_pct": 4,
+        "S3_stealthDriftTPR_pct": 100,
+        "S3_medianDelaySteps": 3,
+        "S4_memoryPoisonBlockTPR_pct": 100,
+        "S5_escalationBlock_pct": 100,
+        "S5_offlineProofVerified_pct": 100
+      }
+    },
+    "verdicts": {
+      "H2a_spike_fpr_50pct_lower_than_raw_cusum": "PASS",
+      "H2b_stealth_drift_tpr_ge_90pct": "PASS",
+      "H2c_memory_poison_tpr_ge_95pct_and_clean_fpr_le_2pct": "PASS",
+      "H2d_100pct_escalation_and_proof_integrity": "PASS"
+    }
+  },
+  "E3_gnovmGasScaling": {
+    "gasByTest": {
+      "p/arobi/signals::TestFixedPointMathAccuracy": 873623,
+      "p/arobi/signals::TestRobustSmootherRemovesSpikesAndMatchesBatchCausally": 10367298,
+      "p/arobi/signals::TestDriftDetectorsCatchShiftWhileHampelCusumIgnoresSingleSpike": 11673525,
+      "p/arobi/signals::TestSphericalCoherenceOrderInvarianceAndPoisoningDetection": 4845028,
+      "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65379281,
+      "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 3794785,
+      "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
+      "p/arobi/assurance::TestAccumulatorRFC6962ProofsAndTamperRejection": 10632310,
+      "p/arobi/assurance::TestGovernedAgentLifecycleProducesVerifiableEvidenceOutOfTheBox": 12771854,
+      "p/arobi/assurance::TestFailClosedKillSwitchOverspendAndTamperDetection": 4579478,
+      "p/arobi/assurance::TestFluentAgentBuilderProducesVerifiableEvidence": 5922320,
+      "p/arobi/assurance::TestBenchSingleGovernedActionGas": 2659102,
+      "p/arobi/assurance::TestBenchAdaptiveDriftAndCoherenceSingleActionGas": 4971378,
+      "p/arobi/assurance::TestBenchAccumulatorScale10": 1462219,
+      "p/arobi/assurance::TestBenchAccumulatorScale50": 6105853,
+      "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
+      "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
+      "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
+      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsOnGnoLand": 36632356,
+      "r/arobi/assurance::TestRevocationAndRateLimit": 6831718,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 30284777,
+      "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29540006,
+      "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
+    },
+    "accumulatorScaling": [
+      {
+        "leaves": 10,
+        "maxProofHashes": 4,
+        "gas": 1462219
+      },
+      {
+        "leaves": 50,
+        "maxProofHashes": 6,
+        "gas": 6105853
+      },
+      {
+        "leaves": 100,
+        "maxProofHashes": 7,
+        "gas": 12022205
+      },
+      {
+        "leaves": 250,
+        "maxProofHashes": 8,
+        "gas": 32636865
+      }
+    ],
+    "singleActionGas": {
+      "governedActionWithProofs": 2659102,
+      "adaptiveDriftAndCoherenceAction": 4971378
+    },
+    "verdicts": {
+      "H3_logarithmic_proof_and_bounded_gas": "PASS"
+    }
+  }
+}

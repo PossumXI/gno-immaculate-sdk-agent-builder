@@ -1,0 +1,43 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline-verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run standalone RFC 6962 evidence verifier tests
+        run: node --test verifier/verify-evidence.test.mjs
+
+  gno-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Clone and build Gno v1.8.0
+        run: |
+          git clone --depth 1 --branch v1.8.0 https://github.com/gnolang/gno.git /tmp/gno-v1.8.0
+          cd /tmp/gno-v1.8.0
+          GOWORK=off go build -o /tmp/gno-v1.8.0/build/gno ./gnovm/cmd/gno
+      - name: Run Gno lint and unit tests
+        env:
+          GNO_SRC: /tmp/gno-v1.8.0
+        run: bash scripts/run-gno-tests.sh
+      - name: Run pre-registered scientific experiments (E1, E2, E3)
+        env:
+          GNO_SRC: /tmp/gno-v1.8.0
+        run: |
+          node experiments/run_experiments.mjs
+          node -e "const r = JSON.parse(require('fs').readFileSync('experiments/results.json','utf8')); const all = {...r.E1_fixedPointFidelity.verdicts, ...r.E2_adversarialBenchmark.verdicts, ...r.E3_gnovmGasScaling.verdicts}; console.log(all); if (Object.values(all).some(v => v !== 'PASS')) process.exit(1);"
