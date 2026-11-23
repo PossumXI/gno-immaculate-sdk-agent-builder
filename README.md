@@ -69,13 +69,9 @@ Measured against **real running systems** (reproducible via `node experiments/ru
 
 ## Live Gno.land Onyx Testnet (`onyx-1`) Submission Proof
 
-Submitted on-chain to `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`; currently parked in Onyx's `code_submission_policy = "inert"` approver activation queue — verifiable via `gnokey query vm/qinertpaths`):
+Submitted on-chain to `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`; currently parked in Onyx's `code_submission_policy = "inert"` approver activation queue — verifiable via `gnokey query vm/qinertpaths`).
 
-| Package / Realm Path | Block Height | Transaction Hash |
-| --- | ---: | --- |
-| `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/signals` | `1343642` | `QLBPtPOpBUapHouk+hNHIWjkWarDH383MZhhbmlOOtA=` |
-| `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343646` | `+k7hjislNZ1B2uC0bnk6MihvsoqaeczUtp8OwVDdkK8=` |
-| `gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343648` | `DzU5Dt7AyZbFb8Glx79GbJ+ZWXs3s+G4n4906FoDqsc=` |
+The live Onyx package and realm paths used a deployer-address namespace (`gno.land/p/<namespace>/...` and `gno.land/r/<namespace>/...`). Those on-chain paths, transaction hashes, and deploy block heights are omitted from this public README because they identify the deployer account. To review and run the code, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`. After `enablepkg`, the public `gnoweb` URL will be `https://onyx.testnets.gno.land/r/<namespace>/assurance`.
 
 ---
 

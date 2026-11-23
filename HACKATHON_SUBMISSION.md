@@ -21,19 +21,21 @@
 ## Copy-Paste DoraHacks `Submit Build` Modal Fields
 
 - **Gno.land testnet deployment link (`gnoweb` URL):**
-  `https://onyx.testnets.gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance`
-  *(Note: Submitted on-chain to `onyx-1` at blocks `1343642` / `1343646` / `1343648`; verifiable right now via `gnokey query vm/qinertpaths` while awaiting Onyx `enablepkg` approver activation.)*
+  `https://onyx.testnets.gno.land/r/<namespace>/assurance`
+  *(Note: Submitted on-chain to `onyx-1` and verifiable via `gnokey query vm/qinertpaths` while awaiting Onyx `enablepkg` approver activation. The live path used a deployer-address namespace and is omitted from this public file.)*
 - **Realm or package path:**
-  `gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance`
-  *(Pure library packages: `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/signals` and `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance`)*
+  `gno.land/r/<namespace>/assurance`
+  *(Pure library packages: `gno.land/p/<namespace>/signals` and `gno.land/p/<namespace>/assurance`. For code review, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`.)*
 - **Is this a new project, or one started before Gnome Tavern?**
   > Brand-new Gno.land SDK, fixed-point signal assurance library, Familiar & Governed MemoryVault runtime, stdio MCP server, `gnosh.ai`/`Ullumii`/Local-GPU adapters, interactive browser verifier, and pre-registered scientific benchmark suite (E1–E5 + Live Benchmarks) built from scratch for the Gnome Tavern Hackathon.
 - **On-Chain Onyx (`onyx-1`) Proof Table (for `#gnome-tavern-hackathon` `enablepkg` activation):**
-  | Package / Realm | Block | Gas Used | Tx Hash |
-  | --- | ---: | ---: | --- |
-  | `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/signals` | `1343642` | `31,981,544` | `QLBPtPOpBUapHouk+hNHIWjkWarDH383MZhhbmlOOtA=` |
-  | `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343646` | `123,670,779` | `+k7hjislNZ1B2uC0bnk6MihvsoqaeczUtp8OwVDdkK8=` |
-  | `gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343648` | `48,678,627` | `DzU5Dt7AyZbFb8Glx79GbJ+ZWXs3s+G4n4906FoDqsc=` |
+  | Package / Realm | Status |
+  | --- | --- |
+  | `gno.land/p/<namespace>/signals` | Submitted to `onyx-1`, awaiting `enablepkg` |
+  | `gno.land/p/<namespace>/assurance` | Submitted to `onyx-1`, awaiting `enablepkg` |
+  | `gno.land/r/<namespace>/assurance` | Submitted to `onyx-1`, awaiting `enablepkg` |
+
+  Transaction hashes, deploy block heights, gas used, and the deployer bech32 namespace are omitted from this public file because they identify the deployer account. Share the live paths with judges privately if they need to confirm the on-chain submission.
 
 ---
 
