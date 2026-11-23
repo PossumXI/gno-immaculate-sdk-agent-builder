@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Immaculate Agent SDK Builder packages & realm to Gno.land Onyx Testnet (onyx-1).
+# Deploy Immaculate SDK Agent Builder packages and realm to the Gno.land Onyx testnet (onyx-1).
 #
 # Usage:
 #   GNOKEY_BIN=gnokey bash scripts/deploy-onyx.sh <testnet-key-name> [namespace]
@@ -67,7 +67,7 @@ deploy_pkg p assurance
 deploy_pkg r assurance
 
 echo ""
-echo "=== Deployed Immaculate Agent SDK Builder to Onyx ($CHAIN_ID) ==="
+echo "=== Deployed Immaculate SDK Agent Builder to Onyx ($CHAIN_ID) ==="
 echo "Explorer: https://onyx.testnets.gno.land/r/${NAMESPACE}/assurance"
 echo ""
 echo "Next (private operator initialization — never commit payout addresses):"

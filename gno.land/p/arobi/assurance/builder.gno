@@ -7,7 +7,7 @@ import (
 )
 
 // AgentBuilder is the fluent Immaculate SDK Agent Builder for constructing governed
-// Gno agents with fail-closed policies, single-use warrants, and RFC 6962 evidence
+// agents with fail-closed policies, single-use warrants, and RFC 6962 evidence
 // out of the box.
 type AgentBuilder struct {
 	cfg            AgentConfig

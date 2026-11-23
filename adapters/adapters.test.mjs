@@ -78,7 +78,7 @@ test('Ullumii bridge records governed MCP actions and exports Whisper cross-harn
   const handoff = bridge.exportWhisperHandoff({
     toHarness: 'gnosh.ai',
     toAgentId: 'gnosh-coder-1',
-    taskPayload: { repo: 'gno-immaculate-sdk-agent-builder', task: 'run gno test' },
+    taskPayload: { repo: 'immaculate-sdk-agent-builder', task: 'run gno test' },
   });
   assert.equal(handoff.version, 'whisper-agent-bus/1');
   assert.equal(handoff.fromHarness, 'ullumii');

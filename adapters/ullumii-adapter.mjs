@@ -1,4 +1,4 @@
-// Ullumii Harness Adapter for Immaculate Agent SDK (Gno).
+// Ullumii Harness Adapter for Immaculate SDK Agent Builder.
 //
 // Bridges Ullumii governed tool executions, MCP calls, and work handoffs into
 // deterministic RFC 6962 EvidenceBundles compatible with gno.land/r/arobi/assurance

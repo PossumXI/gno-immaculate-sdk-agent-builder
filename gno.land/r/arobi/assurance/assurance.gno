@@ -1,5 +1,5 @@
-// Package assurance is the public on-chain Gno.land Agent Passport Registry and
-// RFC 6962 Evidence Anchor for the Immaculate Agent SDK Builder.
+// Package assurance is the public on-chain agent passport registry on Gno.land and
+// RFC 6962 Evidence Anchor for Immaculate SDK Agent Builder.
 //
 // Any agent built with gno.land/p/arobi/assurance can register an owner-bound passport,
 // anchor hash-chained evidence checkpoints (paying AnchorFeeUgnot in GNOT), optionally

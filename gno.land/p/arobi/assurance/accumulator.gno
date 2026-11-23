@@ -1,4 +1,4 @@
-// Package assurance implements the Arobi Assurance Agent SDK natively in Gno.
+// Package assurance implements the Arobi Assurance Agent SDK, built on Gno.land.
 //
 // Every agent tool invocation passes through a deterministic, fail-closed pipeline:
 //

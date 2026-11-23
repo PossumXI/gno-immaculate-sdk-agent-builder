@@ -26,7 +26,7 @@ type registeredTool struct {
 	handler ToolHandler
 }
 
-// AgentConfig configures an Arobi-assured Gno Agent runtime.
+// AgentConfig configures an Arobi-assured agent runtime.
 type AgentConfig struct {
 	AgentID          string
 	ChainID          string
@@ -60,7 +60,7 @@ type AssuranceMetrics struct {
 	AnchorLagBlocks     int64  // -1 if never anchored
 }
 
-// Agent is the out-of-the-box Arobi Assurance SDK runtime in Gno.
+// Agent is the out-of-the-box Arobi Assurance SDK runtime, built on Gno.land.
 // Every action emits a hash-chained DecisionReceipt and EffectClosure inside an
 // RFC 6962 Merkle Accumulator ready for anchoring on gno.land.
 type Agent struct {

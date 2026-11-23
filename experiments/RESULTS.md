@@ -1,4 +1,4 @@
-# Scientific Evaluation Results — Immaculate Agent SDK (Gno)
+# Scientific Evaluation Results — Immaculate SDK Agent Builder
 
 **Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-23T04:57:30.422Z`
 

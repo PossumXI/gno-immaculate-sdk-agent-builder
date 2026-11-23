@@ -1,4 +1,4 @@
-// Sovereign Local LLM & OpenAI-Compatible Governed Runner for Immaculate Agent SDK.
+// Sovereign Local LLM & OpenAI-Compatible Governed Runner for Immaculate SDK Agent Builder.
 //
 // Connects any local llama-server (e.g. Inkling-2-Mini on local GPU), Ollama, or
 // OpenAI-compatible endpoint directly through deterministic RFC 6962 EvidenceBundle

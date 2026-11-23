@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Pre-Registered Scientific Evaluation Runner for Immaculate Agent SDK (Gno).
+ * Pre-Registered Scientific Evaluation Runner for Immaculate SDK Agent Builder.
  *
  * Implements Experiments E1, E2, and E3 exactly as pre-registered in experiments/PROTOCOL.md:
  *   - E1: Fixed-Point (Scale=1_000_000) vs IEEE-754 float64 fidelity (500 streams/batches),
@@ -1159,7 +1159,7 @@ fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(results, n
 
 // Render Markdown scientific report
 const md = [
-  '# Scientific Evaluation Results — Immaculate Agent SDK (Gno)',
+  '# Scientific Evaluation Results — Immaculate SDK Agent Builder',
   '',
   `**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** \`20261123\` | **Generated:** \`${results.generatedAt}\``,
   '',
