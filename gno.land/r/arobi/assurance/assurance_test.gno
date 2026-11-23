@@ -214,6 +214,33 @@ func TestRevocationRateLimitAndVaultCollection(cur realm, t *testing.T) {
 	testing.SkipHeights(MinBlocksBetween)
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
+	UpdateAgentPolicy(cross(cur), "agent-revoke", policyDig2)
+	testing.SetRealm(testing.NewUserRealm(stranger))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "only agent owner", func() {
+		UpdateAgentPolicy(cross(cur), "agent-revoke", policyDig1)
+	})
+
+	// Operator pricing update + operator transfer (old operator loses rights, new operator succeeds).
+	testing.SetRealm(testing.NewUserRealm(opAdmin))
+	sendFee(0)
+	SetPricing(cross(cur), 2000, 15000000)
+	uassert.Equal(t, int64(2000), AnchorFeeUgnot())
+	uassert.Equal(t, int64(15000000), AgentPlanPriceUgnot())
+	testing.SetRealm(testing.NewUserRealm(opAdmin))
+	sendFee(0)
+	TransferOperator(cross(cur), agentOwner)
+	testing.SetRealm(testing.NewUserRealm(opAdmin))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "operator only", func() {
+		SetPricing(cross(cur), 1000, 10000000)
+	})
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	SetPricing(cross(cur), 1000, 10000000)
+
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
 	RevokeAgent(cross(cur), "agent-revoke")
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
@@ -221,6 +248,11 @@ func TestRevocationRateLimitAndVaultCollection(cur realm, t *testing.T) {
 	uassert.AbortsContains(t, cur, "revoked", func() {
 		AnchorCheckpoint(cross(cur), "agent-revoke", policyDig2, policyDig1, 4, 2, 2)
 	})
+	uassert.Equal(t, 64, len(Root()))
+	uassert.Equal(t, 64, len(DemoRoot()))
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	ResetDemoCircuitBreaker(cross(cur))
 }
 
 func TestLiveOnChainDemoAgent(cur realm, t *testing.T) {

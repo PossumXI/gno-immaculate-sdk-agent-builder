@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Run standalone RFC 6962 verifier & Ullumii/gnosh.ai adapter tests
-        run: node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs
+      - name: Run standalone RFC 6962 verifier, Ullumii/gnosh.ai adapters, & MCP stdio server tests
+        run: node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs mcp/immaculate-mcp-server.test.mjs
 
   gno-tests:
     runs-on: ubuntu-latest

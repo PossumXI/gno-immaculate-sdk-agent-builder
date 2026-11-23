@@ -1,4 +1,6 @@
-# Immaculate Agent SDK Builder (`gno-immaculate-sdk-agent-builder`)
+# Immaculate Agent SDK Builder
+
+*(Repository: `PossumXI/gno-immaculate-sdk-agent-builder` · Build Name: **Immaculate Agent SDK Builder**)*
 
 **Deterministic, consensus-safe autonomous agent SDK & fluent builder in Gno — implementing the Arobi Assurance Architecture with out-of-the-box RFC 6962 cryptographic evidence, fixed-point behavioral drift circuit breakers, spherical memory-poisoning gates, and attenuated multi-agent delegation anchored directly on Gno.land.**
 
@@ -47,6 +49,17 @@ All pre-registered evaluations in [experiments/PROTOCOL.md](experiments/PROTOCOL
   - **Rejected:** Raw 3rd-order jerk (`n=3`) amplified noise $20\times$ (`100%` spike FPR, `2.5%` runaway TPR vs `HampelCusum`'s `99%` TPR & `5%` spike FPR) and was **KILLED**.
   - **Adopted:** Recognizing $\sum_j (u_j - m)/\|u_j - m\| = 0$ as the optimality condition of the **L1 Geometric Median** (Weiszfeld 1937; Vardi & Zhang 2000; 50% breakdown point), our clean-room fixed-point **`GeometricMedianFixed`** achieved **`0.9299` ROC-AUC** under 35% coordinated memory poisoning vs `0.8640` arithmetic centroid (`+6.59` pts AUC) and was adopted into `gno.land/p/arobi/signals`.
 
+### Live Public System Benchmarks ([experiments/LIVE_BENCHMARKS.md](experiments/LIVE_BENCHMARKS.md))
+
+Measured against **real running systems** (reproducible via `node experiments/run_live_benchmarks.mjs`):
+
+| Live System / Subsystem | Real Measurement |
+| --- | --- |
+| **Gno.land Onyx Testnet (`onyx-1`) RPC** | `/status` p50 `54.6 ms` (`abci_query` `43.6 ms`) at block `1344098`; `3` pkgs + `2` realms verified on-chain |
+| **Stdio MCP Server (`mcp/immaculate-mcp-server.mjs`)** | `governed_execute` p50 `1.284 ms`, `familiar_quarantine` `0.220 ms`, `familiar_recall` `0.232 ms`, `verify_evidence` `0.357 ms` |
+| **Whisper Agent Bus Crypto (X25519 + ChaCha20-Poly1305)** | **1,209 ops/s** (256 B), **1,221 ops/s** (4 KiB), **1,104 ops/s** (16 KiB) — `100%` verified |
+| **Sovereign Local GPU (`Inkling-2-Mini-Uncensored`, MX150 CUDA + CPU MoE)** | Allowed turns `5.22–5.63` prompt / `2.14–2.18` gen tok/s; **fail-closed budget & action refusals complete in `1.2–1.8 ms` (`100%` GPU compute saved)**; `5/5` RFC 6962 proofs PASS |
+
 ---
 
 ## Live Gno.land Onyx Testnet (`onyx-1`) Submission Proof
@@ -65,13 +78,16 @@ Submitted on-chain to `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`; curren
 
 | Path | Description |
 | --- | --- |
-| `gno.land/p/arobi/signals` | Pure integer (`Scale = 1,000,000`) deterministic signal assurance primitives: `RobustSmoother` (Hampel+EMA), `CausalMedian`, `CusumDetector`, `PageHinkleyDetector`, `HampelCusumDetector`, `MeanResultantLengthFixed`, `MeanPairwiseCosineFixed`, `CoherenceGate`, `SignalEvidence`. |
-| `gno.land/p/arobi/assurance` | Core Agent SDK & fluent `NewAgentBuilder`: fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), single-use `EffectWarrant`, `DelegatedWarrant` attenuation, `HarnessFrame` (`gnosh.ai`, `ullumii`, `whisper-bus`, `gno-realm`), `DecisionReceipt`, `EffectClosure`, RFC 6962 `Accumulator`, `EvidenceBundle.Verify()`, measured `AssuranceMetrics`. |
-| `gno.land/r/arobi/assurance` | Stateful Gno.land realm: `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, GNOT anchor fees & 30-day Pro Agent `SubscribeAgent` plan with private opaque operator settlement, on-chain `VerifyCheckpointProof`, interactive `RunDemoAction` / `RunAdaptiveDemoAction`, and `gnoweb` UI. |
-| `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs`, NDJSON frame ingestion → RFC 6962 proofs + anchor txs) and **`Ullumii`** (`ullumii-adapter.mjs`, governed session bridge + Whisper Agent Bus handoff). |
+| `gno.land/p/arobi/signals` | Pure integer (`Scale = 1,000,000`) deterministic signal assurance primitives: `RobustSmoother` (Hampel+EMA), `CausalMedian`, `CusumDetector`, `PageHinkleyDetector`, `HampelCusumDetector`, `MeanResultantLengthFixed`, `MeanPairwiseCosineFixed`, `GeometricMedianFixed` (L1 50%-breakdown), `CoherenceGate`, `SignalEvidence`. |
+| `gno.land/p/arobi/assurance` | Core Agent & Familiar SDK (`NewAgentBuilder`, `BuildFamiliar`): fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), `MemoryVault` (Spherical Quarantine + Overlap-Weighted Hybrid RRF `k=60`), `Familiar` + `CapabilityToken` + `WilsonLowerBoundFixed`, single-use `EffectWarrant`, `DelegatedWarrant`, `HarnessFrame`, RFC 6962 `Accumulator`. |
+| `gno.land/r/arobi/assurance` | Stateful Gno.land realm: `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, GNOT anchor fees & 30-day Pro Agent `SubscribeAgent` plan with private opaque operator settlement, `RunDemoAction` / `RunAdaptiveDemoAction` / `RunFamiliarDemoMemory` / `RunFamiliarDemoAction`, and `gnoweb` UI. |
+| `mcp/` | Zero-dependency **Model Context Protocol (MCP) JSON-RPC 2.0 stdio server** (`immaculate-mcp-server.mjs`) exposing 6 governed tools for Claude, Antigravity, `Ullumii`, `gnosh.ai`, and `gnomcp` clients. |
+| `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs`), **`Ullumii`** (`ullumii-adapter.mjs`), and **Sovereign Local GPU LLMs** (`local-llm-adapter.mjs`, live-tested on `Inkling-2-Mini-Uncensored`). |
+| `web/index.html` | Interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, and live `onyx-1` RPC explorer. |
 | `examples/` | Runnable, GnoVM-tested end-to-end examples: DeFi Treasury Rebalancer (`BuildDeFiTreasuryAgent`) and Multi-Agent Attenuated Delegation (`BuildCoordinatorAndWorker`). |
 | `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`). |
-| `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible benchmark runner (`run_experiments.mjs`), and empirical results (`RESULTS.md`, `results.json`). |
+| `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible E1–E5 benchmark runner (`run_experiments.mjs` → `RESULTS.md`), and **Live Public Benchmarks** (`run_live_benchmarks.mjs` → `LIVE_BENCHMARKS.md`). |
+| `CONTRIBUTORS.md` / `HACKATHON_SUBMISSION.md` | Team roles, GitHub task assignments (`@iShowLinux`, `@JonDevOps`, `@canderson777`), and compliant Gnome Tavern submission guide. |
 
 ---
 
@@ -116,11 +132,12 @@ func BuildDeFiAgent(owner string) (*assurance.Agent, *assurance.DriftGuardPolicy
 # 1. Real Gno v1.8.0 lint & unit tests across signals, assurance, realm, and examples
 bash scripts/run-gno-tests.sh
 
-# 2. Standalone zero-dependency offline verifier + Ullumii & gnosh.ai adapter tests (Node.js >= 20)
-node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs
+# 2. Standalone zero-dependency offline verifier, Ullumii / gnosh.ai / Local-LLM adapters & stdio MCP server tests (Node.js >= 20)
+node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs mcp/immaculate-mcp-server.test.mjs
 
-# 3. Full pre-registered scientific evaluation (Experiments E1, E2, E3)
+# 3. Full pre-registered scientific evaluation (Experiments E1–E5) & Live Public Benchmarks
 node experiments/run_experiments.mjs
+node experiments/run_live_benchmarks.mjs
 ```
 
 ---

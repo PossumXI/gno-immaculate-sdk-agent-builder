@@ -1,0 +1,159 @@
+{
+  "generatedAt": "2026-11-23T05:31:21.329Z",
+  "onyxTestnet": {
+    "rpc": "https://rpc.onyx.testnets.gno.land:443",
+    "network": "onyx-1",
+    "latestHeight": 1344098,
+    "statusP50Ms": 54.639,
+    "statusP95Ms": 250.478,
+    "verifiedPackagesOnChain": 3,
+    "verifiedRealmsOnChain": 2,
+    "abciQueryMs": 43.6,
+    "deployedArtifacts": [
+      {
+        "path": "gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/signals",
+        "height": 1343642,
+        "gasUsed": 31981544,
+        "txHash": "QLBPtPOpBUapHouk+hNHIWjkWarDH383MZhhbmlOOtA="
+      },
+      {
+        "path": "gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance",
+        "height": 1343646,
+        "gasUsed": 123670779,
+        "txHash": "+k7hjislNZ1B2uC0bnk6MihvsoqaeczUtp8OwVDdkK8="
+      },
+      {
+        "path": "gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance",
+        "height": 1343648,
+        "gasUsed": 48678627,
+        "txHash": "DzU5Dt7AyZbFb8Glx79GbJ+ZWXs3s+G4n4906FoDqsc="
+      },
+      {
+        "path": "gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/whisper",
+        "height": 1343650,
+        "gasUsed": 17978068,
+        "txHash": "Y8yxq2g2dcj2q3PUrJDzHEk6TeyEq2mEDfXvn6yW0ow="
+      },
+      {
+        "path": "gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/whisper",
+        "height": 1343652,
+        "gasUsed": 45410622,
+        "txHash": "/EB7ITw57NRhnrB9rIS5gi6hp73k9yRcHKwH6LWwOcc="
+      }
+    ]
+  },
+  "whisperAgentBusCrypto": [
+    {
+      "tier": "256 B (Agent Handoff)",
+      "bytes": 256,
+      "iters": 200,
+      "sealP50Ms": 0.371,
+      "openP50Ms": 0.442,
+      "roundTripOpsPerSec": 1209,
+      "verifiedPct": 100
+    },
+    {
+      "tier": "4 KiB (Free Tier Cap)",
+      "bytes": 4096,
+      "iters": 200,
+      "sealP50Ms": 0.369,
+      "openP50Ms": 0.476,
+      "roundTripOpsPerSec": 1221,
+      "verifiedPct": 100
+    },
+    {
+      "tier": "16 KiB (Pro Tier Cap)",
+      "bytes": 16384,
+      "iters": 200,
+      "sealP50Ms": 0.397,
+      "openP50Ms": 0.5,
+      "roundTripOpsPerSec": 1104,
+      "verifiedPct": 100
+    }
+  ],
+  "mcpStdioServerLatency": {
+    "governed_execute": {
+      "p50Ms": 1.284,
+      "p95Ms": 2.349,
+      "runs": 25
+    },
+    "familiar_quarantine": {
+      "p50Ms": 0.22,
+      "p95Ms": 0.934,
+      "runs": 25
+    },
+    "familiar_recall": {
+      "p50Ms": 0.232,
+      "p95Ms": 0.378,
+      "runs": 25
+    },
+    "verify_evidence": {
+      "p50Ms": 0.357,
+      "p95Ms": 0.681,
+      "runs": 25
+    }
+  },
+  "sovereignLocalGpuLlm": {
+    "model": "AtomicChat/Inkling-2-Mini-Uncensored-AD-IQ2_M.gguf (26.4B MoE / 3.4B active, looped core)",
+    "hardware": "Local NVIDIA GeForce MX150 (2 GiB VRAM, CUDA 12.4) + 4-core CPU MoE Hybrid (llama.cpp b12648)",
+    "tasks": [
+      {
+        "task": "Arithmetic Reasoning",
+        "verdict": "ALLOW (EXECUTED)",
+        "wallMs": 84412.8,
+        "promptTps": 5.54,
+        "genTps": 2.18,
+        "completionTokens": 175,
+        "gpuSaved": false,
+        "rfc6962Verified": true,
+        "rootPrefix": "4f6d63a682b640b7"
+      },
+      {
+        "task": "Pure Go/Gno Codegen",
+        "verdict": "ALLOW (EXECUTED)",
+        "wallMs": 123704.3,
+        "promptTps": 5.22,
+        "genTps": 2.14,
+        "completionTokens": 256,
+        "gpuSaved": false,
+        "rfc6962Verified": true,
+        "rootPrefix": "af607daad0c58c6e"
+      },
+      {
+        "task": "RFC 6962 Verification Q&A",
+        "verdict": "ALLOW (EXECUTED)",
+        "wallMs": 109142.9,
+        "promptTps": 5.63,
+        "genTps": 2.14,
+        "completionTokens": 224,
+        "gpuSaved": false,
+        "rfc6962Verified": true,
+        "rootPrefix": "448a4ef7d01cc65b"
+      },
+      {
+        "task": "Policy Refusal: Budget Overspend",
+        "verdict": "DENY (BUDGET_CAP_EXCEEDED)",
+        "wallMs": 1.2,
+        "promptTps": 0,
+        "genTps": 0,
+        "completionTokens": 0,
+        "gpuSaved": true,
+        "rfc6962Verified": true,
+        "rootPrefix": "14b02fd5239b918f"
+      },
+      {
+        "task": "Policy Refusal: Disallowed Action",
+        "verdict": "DENY (ACTION_NOT_ALLOWLISTED)",
+        "wallMs": 1.8,
+        "promptTps": 0,
+        "genTps": 0,
+        "completionTokens": 0,
+        "gpuSaved": true,
+        "rfc6962Verified": true,
+        "rootPrefix": "5e471056783ccec5"
+      }
+    ],
+    "finalSessionRoot": "5e471056783ccec5d25f70c57b5a64e3404649acca907fd9b96ccb8d9222ff61",
+    "totalEvidenceLeaves": 10
+  }
+}

@@ -124,6 +124,60 @@ func TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation(t *testing.T) {
 	uassert.True(t, wLow > 400000 && wLow < 650000)
 	uassert.True(t, wHigh > 900000 && wHigh < signals.Scale)
 	uassert.True(t, wHigh > wLow)
+
+	// 6. Wilson Trust Floor auto-suspension + Familiar.Revoke kill switch!
+	fam.Revoke()
+	uassert.True(t, fam.Revoked)
+	_, err = fam.Remember(MemoryKindEpisodic, []byte("after revoke"), []int64{980000, 190000, 0, 0}, signals.Scale, 110)
+	uassert.Error(t, err)
+	_, _, _, err = fam.ExecuteWithCapability(CapReadMemory, rootCap.Owner, "rebalance", "pool:gnot-usdc", []byte("x"), nil, "", 0, 100, 111)
+	uassert.Error(t, err)
+	_, err = fam.MintSubCapability("sub-2", CapInvokeTool, 100, 1, 111, 150)
+	uassert.Error(t, err)
+}
+
+func TestMemoryVaultGeometricMedianBatchPurgeAndTrustAutoHalt(t *testing.T) {
+	// Unguarded initial vault (QuarantineThresholdFixed = -Scale) accumulates 5 clean + 2 coordinated poison vectors.
+	vault := NewMemoryVault(MemoryVaultConfig{
+		VaultID:                  "audit-vault",
+		QuarantineThresholdFixed: -signals.Scale,
+		MinTrustedAnchors:        99,
+	})
+	for i := 0; i < 5; i++ {
+		_, err := vault.Ingest(MemoryKindEpisodic, "fam", []byte("clean pool rebalance"), []int64{990000, 140000 + int64(i)*1000, 0, 0}, signals.Scale, int64(i+1), ZeroDigest())
+		uassert.NoError(t, err)
+	}
+	for i := 0; i < 2; i++ {
+		_, err := vault.Ingest(MemoryKindEpisodic, "adv", []byte("poison drain"), []int64{-920000, 390000, 0, 0}, signals.Scale, int64(10+i), ZeroDigest())
+		uassert.NoError(t, err)
+	}
+	uassert.Equal(t, 7, vault.ActiveCount())
+
+	purged, err := vault.AuditAndPurgeWithGeometricMedian(600000)
+	uassert.NoError(t, err)
+	uassert.Equal(t, 2, purged)
+	uassert.Equal(t, 5, vault.ActiveCount())
+	uassert.Equal(t, 2, vault.QuarantinedCount())
+
+	// BuildFamiliar with strict Wilson trust floor (600,000 = 0.60) suspends automatically after 5 violations!
+	b := NewAgentBuilder("trust-floor-familiar").
+		WithPrincipal("g1owner0000000000000000000000000000000000").
+		AllowActions("rebalance").
+		AllowTargets("pool:1").
+		WithBudgetCap(5000).
+		WithTool(ToolSpec{Name: "rebalance", RiskTier: RiskLow, MaxBudgetUgnot: 5000}, func(w EffectWarrant, input []byte) ([]byte, []byte, int64, error) {
+			return []byte("ok"), []byte("w"), w.MaxSpendUgnot, nil
+		})
+	fam, err := b.BuildFamiliar(CapReadMemory|CapWriteMemory|CapInvokeTool, 500, 20, 100, 1, 500, 600000, 600000)
+	uassert.NoError(t, err)
+	// Trigger 5 capability budget violations -> Wilson lower bound = 0 < 600,000 -> suspended!
+	for i := 0; i < 5; i++ {
+		_, _, _, err = fam.ExecuteWithCapability(CapInvokeTool, fam.Owner, "rebalance", "pool:1", []byte("hi"), nil, "", 0, 9999, int64(10+i))
+		uassert.Error(t, err)
+	}
+	uassert.False(t, fam.Trust.Healthy())
+	_, _, _, err = fam.ExecuteWithCapability(CapInvokeTool, fam.Owner, "rebalance", "pool:1", []byte("now-valid"), nil, "", 0, 100, 20)
+	uassert.Error(t, err)
 }
 
 func TestBenchFamiliarMemoryAndCapabilityGas(t *testing.T) {
