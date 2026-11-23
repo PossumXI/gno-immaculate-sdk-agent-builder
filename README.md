@@ -6,6 +6,10 @@
 
 Built by [Arobi Technology Alliance, Inc.](https://aura-genesis.org).
 
+- **1080p Demo Video (2m 45s):** [Watch / Download MP4](https://github.com/PossumXI/gno-immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4)
+- **Live Browser Playground (100/100/100 PageSpeed):** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/)
+- **Public Benchmarks on Hugging Face Hub:** [Dataset (JSONL)](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks) · [Interactive Space](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks)
+
 ---
 
 ## What Makes This Different
@@ -58,7 +62,8 @@ Measured against **real running systems** (reproducible via `node experiments/ru
 | **Gno.land Onyx Testnet (`onyx-1`) RPC** | `/status` p50 `54.6 ms` (`abci_query` `43.6 ms`) at block `1344098`; `3` pkgs + `2` realms verified on-chain |
 | **Stdio MCP Server (`mcp/immaculate-mcp-server.mjs`)** | `governed_execute` p50 `1.284 ms`, `familiar_quarantine` `0.220 ms`, `familiar_recall` `0.232 ms`, `verify_evidence` `0.357 ms` |
 | **Whisper Agent Bus Crypto (X25519 + ChaCha20-Poly1305)** | **1,209 ops/s** (256 B), **1,221 ops/s** (4 KiB), **1,104 ops/s** (16 KiB) — `100%` verified |
-| **Sovereign Local GPU (`Inkling-2-Mini-Uncensored`, MX150 CUDA + CPU MoE)** | Allowed turns `5.22–5.63` prompt / `2.14–2.18` gen tok/s; **fail-closed budget & action refusals complete in `1.2–1.8 ms` (`100%` GPU compute saved)**; `5/5` RFC 6962 proofs PASS |
+| **Sovereign Local GPU (`Inkling-2-Mini-Uncensored`, MX150 CUDA + CPU MoE)** | Allowed turns `5.22–5.63` prompt / `2.14–2.18` gen tok/s; **fail-closed budget & action refusals complete in `0.76–2.28 ms` (`0.97 ms` median across 5/5 adversarial probes, `100%` GPU saved)**; `100%` RFC 6962 proofs PASS |
+| **Public Third-Party Platforms** | **Hugging Face Hub:** [Dataset](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks) & [Live Space](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks) · **Google PageSpeed Insights:** [**100 Perf / 100 BP / 100 SEO** (LCP `0.2s`, TBT `0ms`, CLS `0`)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) · **Live Playground:** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/) |
 
 ---
 

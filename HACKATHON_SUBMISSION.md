@@ -11,6 +11,9 @@
   > Consensus-safe autonomous agent & Familiar SDK in pure fixed-point Gno — out-of-the-box RFC 6962 cryptographic evidence, Hampel-CUSUM drift circuit breakers, poison-resistant Hybrid RRF MemoryVault, attenuated object-capabilities, stdio MCP server, and `Ullumii` / `gnosh.ai` / sovereign local GPU adapters anchored on Gno.land.
 - **Tags:** `Go`, `Smart Contracts`, `AI`, `Layer 1`, `dApps`, `DeFi`
 - **GitHub Repo:** `https://github.com/PossumXI/gno-immaculate-sdk-agent-builder`
+- **Demo Video (1080p MP4, 2m 45s):** `https://github.com/PossumXI/gno-immaculate-sdk-agent-builder/releases/download/v1.0.0-gnome-tavern/Immaculate_Agent_SDK_Builder_Demo_1080p.mp4`
+- **Live Web Playground:** `https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/`
+- **Public Benchmarks (Hugging Face & PageSpeed):** `https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks` · [PageSpeed 100/100/100](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop)
 - **Website:** `https://aura-genesis.org`
 
 ---

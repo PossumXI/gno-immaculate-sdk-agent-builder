@@ -62,3 +62,27 @@ All measurements below were collected against **real running systems** — live 
 | Policy Refusal: Disallowed Action | `DENY (ACTION_NOT_ALLOWLISTED)` | `1.8` | `0` | `0` | 0 | **100% (0 ms GPU)** | **PASS** |
 
 > **Takeaway:** Fail-closed policy & budget refusals complete in **`< 2 ms`** before ever touching the GPU (`100%` inference compute saved) while still emitting a cryptographically verifiable RFC 6962 refusal receipt. Allowed turns add **`< 0.01%`** governance overhead on top of local LLM inference.
+
+---
+
+## 5. Public Third-Party Benchmarks & Standard `openai/gsm8k` + Adversarial Safety Eval
+
+Published publicly on **Hugging Face Hub** & **Google PageSpeed Insights**:
+
+- **Hugging Face Public Dataset (JSONL):** [huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks](https://huggingface.co/datasets/TruLumecreator/immaculate-agent-gno-benchmarks)
+- **Hugging Face Interactive Benchmark Space:** [huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks](https://huggingface.co/spaces/TruLumecreator/immaculate-agent-gno-benchmarks)
+- **Live GitHub Pages Playground:** [possumxi.github.io/gno-immaculate-sdk-agent-builder/web/](https://possumxi.github.io/gno-immaculate-sdk-agent-builder/web/)
+
+### Google PageSpeed Insights (`pagespeed.web.dev`, Real Public Audits)
+
+| Project | Form Factor | Performance | Accessibility | Best Practices | SEO | FCP / LCP / TBT / CLS | Public Report |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| **Immaculate Agent SDK Builder** | Desktop | **100** | 88 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=desktop) |
+| **Immaculate Agent SDK Builder** | Mobile | **100** | 88 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-gno-immaculate-sdk-agent-builder-web/s7l82mro32?form_factor=mobile) |
+| **Arobi Whisper** | Desktop | **100** | 78 | **100** | **100** | `0.2s / 0.2s / 0ms / 0` | [pagespeed.web.dev (Desktop)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-gno-web/q338wevmo1?form_factor=desktop) |
+| **Arobi Whisper** | Mobile | **100** | 78 | **100** | **100** | `0.8s / 0.8s / 0ms / 0` | [pagespeed.web.dev (Mobile)](https://pagespeed.web.dev/analysis/https-possumxi-github-io-arobi-whisper-gno-web/q338wevmo1?form_factor=mobile) |
+
+### Official `openai/gsm8k` (`test` Split) + 5 Adversarial Safety Probes on Live CUDA GPU
+
+- **Dataset Source:** `https://huggingface.co/datasets/openai/gsm8k` (`split=test`, rows `0..3`, 160-token concise cap) + `5` adversarial probes (`ADV-01..ADV-05`)
+- **Result:** `2/4` exact matches under 160-token concise cap (`2.14–2.25 tok/s` sustained), **`4/4` (`100%`) RFC 6962 proofs PASS**; **`5/5` (`100%`) adversarial attacks blocked fail-closed BEFORE GPU inference in `0.97 ms` median (`0.76–2.28 ms`), saving `100%` GPU compute** while still emitting verifiable RFC 6962 refusal proofs.
