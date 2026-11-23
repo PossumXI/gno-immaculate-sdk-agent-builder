@@ -4,49 +4,113 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Immaculate Agent SDK Builder on Gno.land — interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, live Onyx-1 RPC explorer, and E1-E5 scientific benchmarks." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b12'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%232dd4bf' stroke-width='3'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2315151f'/%3E%3Crect x='6' y='22' width='5' height='3' fill='%23ff2d95'/%3E%3Crect x='11' y='22' width='5' height='3' fill='%23ffe34d'/%3E%3Crect x='16' y='22' width='5' height='3' fill='%232de2ff'/%3E%3Crect x='21' y='22' width='5' height='3' fill='%235cff7a'/%3E%3Ccircle cx='16' cy='13' r='5' fill='none' stroke='%23f4f4fb' stroke-width='2.4'/%3E%3C/svg%3E" />
   <title>Immaculate Agent SDK Builder — RFC 6962 Verifier &amp; Familiar Memory Playground</title>
   <style>
-    :root { --bg:#070b12; --card:#101725; --card2:#141e30; --border:#24324d; --fg:#e8eefc; --muted:#93a4c3; --accent:#2dd4bf; --accent2:#60a5fa; --bad:#f87171; }
+    /* Arobi brand tokens (Asgard src/pages/hue/hue.css, src/lib/whisper/brand.ts). Never a new palette. */
+    :root {
+      --hue-pink:#ff2d95; --hue-orange:#ff7a3d; --hue-yellow:#ffe34d; --hue-green:#5cff7a; --hue-cyan:#2de2ff; --hue-violet:#8a6bff;
+      --page:#0e0e16; --ink:#15151f; --ink-2:#1d1d2b; --line:#2f2f46; --text:#f4f4fb; --muted:#b9b9d3; --bad:#ff6b81;
+      --accent:var(--hue-yellow);
+      --spectrum:linear-gradient(90deg,var(--hue-pink),var(--hue-orange),var(--hue-yellow),var(--hue-green),var(--hue-cyan),var(--hue-violet));
+      --stripes:linear-gradient(90deg,var(--hue-pink) 0 25%,var(--hue-yellow) 25% 50%,var(--hue-cyan) 50% 75%,var(--hue-green) 75% 100%);
+      --mono:ui-monospace,SFMono-Regular,'JetBrains Mono',Menlo,Consolas,monospace;
+      --sans:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+      color-scheme:dark;
+    }
     * { box-sizing:border-box; }
-    body { margin:0; font-family:ui-sans-serif,system-ui,-apple-system,sans-serif; background:radial-gradient(circle at top,#111c33 0%,var(--bg) 55%); color:var(--fg); line-height:1.5; }
-    main { max-width:1060px; margin:0 auto; padding:28px 20px 72px; }
-    h1 { font-size:2rem; margin:10px 0 6px; letter-spacing:-0.02em; }
-    h2 { font-size:1.1rem; margin:0 0 10px; }
-    p.sub { color:var(--muted); margin:0 0 20px; }
-    .badges { display:flex; flex-wrap:wrap; gap:6px; }
-    .badge { padding:3px 10px; border-radius:999px; font-size:0.75rem; background:#0f2930; color:var(--accent); border:1px solid #1e4d54; }
-    .tabs { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; border-bottom:1px solid var(--border); padding-bottom:10px; }
-    .tab { background:#111927; color:var(--muted); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
-    .tab.active { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#051018; border-color:transparent; }
+    body { margin:0; font-family:var(--sans); background:var(--page); color:var(--text); line-height:1.55; }
+    body::before { content:''; position:fixed; inset:0 0 auto 0; height:4px; background:var(--stripes); z-index:10; }
+    main { max-width:1060px; margin:0 auto; padding:34px 20px 64px; }
+    a { color:var(--hue-cyan); }
+    a:hover { color:var(--text); }
+    :focus-visible { outline:2px solid var(--hue-cyan); outline-offset:2px; }
+
+    /* The VHS screen: scanlines and a rolling tracking band over the picture; decoration only. */
+    .vhs { position:relative; overflow:hidden; isolation:isolate; border:1px solid rgba(138,107,255,.35); border-radius:18px;
+      background:radial-gradient(120% 140% at 50% 0%,#22223a 0%,#0b0b12 72%); padding:24px 26px 22px;
+      box-shadow:0 0 0 1px rgba(138,107,255,.16),0 24px 80px -30px rgba(138,107,255,.45); }
+    .vhs::after { content:''; position:absolute; inset:0; pointer-events:none; z-index:2;
+      background:repeating-linear-gradient(to bottom,transparent 0 2px,rgba(0,0,0,.24) 2px 3px); }
+    .vhs::before { content:''; position:absolute; left:0; right:0; top:-60px; height:48px; pointer-events:none; z-index:1;
+      background:linear-gradient(to bottom,transparent,rgba(244,244,251,.06),transparent); animation:vhs-roll 7s linear infinite; }
+    @keyframes vhs-roll { to { transform:translateY(520px); } }
+    .osd { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.1rem; font:600 11.5px/1 var(--mono);
+      letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+    .osd .play { color:var(--hue-green); }
+    .osd .rec { display:inline-flex; align-items:center; gap:.45em; color:var(--bad); margin-left:auto; }
+    .osd .rec::before { content:''; width:.62em; height:.62em; border-radius:50%; background:currentColor;
+      box-shadow:0 0 10px currentColor; animation:rec-blink 1.4s steps(2,jump-none) infinite; }
+    @keyframes rec-blink { 50% { opacity:.15; } }
+    @media (prefers-reduced-motion:reduce) { .vhs::before, .osd .rec::before { animation:none; } }
+    h1 { font:800 clamp(2rem,4.6vw,3.2rem)/1.05 var(--sans); letter-spacing:-0.03em; margin:18px 0 8px; }
+    .spectrum { background:var(--spectrum); -webkit-background-clip:text; background-clip:text; color:transparent;
+      filter:drop-shadow(-1.5px 0 rgba(255,45,149,.45)) drop-shadow(1.5px 0 rgba(45,226,255,.45)); }
+    h2 { font:700 1.05rem/1.3 var(--sans); margin:0 0 10px; color:var(--text); }
+    p.sub { color:var(--muted); margin:0 0 16px; max-width:70ch; }
+    .stripe { height:5px; width:180px; border-radius:3px; background:var(--stripes); }
+    .badges { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 16px; }
+    .badge { padding:4px 10px; border-radius:6px; font:600 11px/1.4 var(--mono); letter-spacing:.04em; background:var(--ink-2);
+      color:var(--text); border:1px solid var(--line); border-left:3px solid var(--hue-pink); }
+    .badge:nth-child(6n+2) { border-left-color:var(--hue-orange); }
+    .badge:nth-child(6n+3) { border-left-color:var(--hue-yellow); }
+    .badge:nth-child(6n+4) { border-left-color:var(--hue-green); }
+    .badge:nth-child(6n+5) { border-left-color:var(--hue-cyan); }
+    .badge:nth-child(6n) { border-left-color:var(--hue-violet); }
+
+    /* Tabs as element-chart squares: the active one carries the four-band bar, like the Hue tile. */
+    .tabs { display:flex; flex-wrap:wrap; gap:10px; margin:22px 0 18px; }
+    .tab { position:relative; background:var(--ink); color:var(--muted); border:1px solid var(--line); border-radius:12px;
+      padding:12px 16px 15px; font:600 .9rem/1.2 var(--sans); cursor:pointer; }
+    .tab:hover { color:var(--text); border-color:#46466a; }
+    .tab.active { color:var(--text); background:linear-gradient(160deg,#22223a,var(--ink) 70%); box-shadow:0 0 0 1px var(--line); }
+    .tab.active::after { content:''; position:absolute; left:14px; right:14px; bottom:6px; height:3px; border-radius:2px; background:var(--stripes); }
     .panel { display:none; }
     .panel.active { display:block; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px; }
-    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
-    label { display:block; font-size:0.8rem; color:var(--muted); margin:10px 0 4px; }
-    input, textarea, select { width:100%; background:#0a101b; color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:9px 10px; font-family:ui-monospace,SFMono-Regular,monospace; font-size:0.83rem; }
-    button.action { margin-top:12px; margin-right:6px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#051018; font-weight:700; border:0; border-radius:8px; padding:9px 14px; cursor:pointer; }
-    button.secondary { margin-top:12px; margin-right:6px; background:var(--card2); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:9px 14px; font-weight:600; cursor:pointer; }
-    button.danger { margin-top:12px; margin-right:6px; background:#3b1520; color:#fecaca; border:1px solid #7f1d1d; border-radius:8px; padding:9px 14px; font-weight:600; cursor:pointer; }
-    pre { background:#05080f; border:1px solid var(--border); border-radius:8px; padding:12px; overflow-x:auto; font-size:0.78rem; color:#a7f3d0; max-height:380px; }
-    table { width:100%; border-collapse:collapse; font-size:0.84rem; margin-top:8px; }
-    th, td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; }
-    th { color:var(--accent); }
-    .pass { color:#34d399; font-weight:700; }
+    .card { position:relative; background:var(--ink); border:1px solid var(--line); border-radius:14px; padding:20px 18px 18px; }
+    .card::before { content:''; position:absolute; left:18px; top:0; width:44px; height:3px; border-radius:0 0 3px 3px; background:var(--stripes); }
+    label { display:block; font:600 11px/1.3 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 5px; }
+    input, textarea, select { width:100%; background:var(--page); color:var(--text); border:1px solid var(--line); border-radius:8px;
+      padding:9px 10px; font-family:var(--mono); font-size:.83rem; }
+    input:focus, textarea:focus, select:focus { border-color:var(--hue-cyan); outline:none; box-shadow:0 0 0 2px rgba(45,226,255,.25); }
+    button.action, button.secondary, button.danger { margin-top:12px; margin-right:6px; border-radius:8px; padding:9px 14px;
+      font:700 .86rem/1.2 var(--sans); cursor:pointer; }
+    button.action { background:var(--accent); color:var(--page); border:0; }
+    button.action:hover { filter:brightness(1.08); }
+    button.secondary { background:var(--ink-2); color:var(--text); border:1px solid var(--line); }
+    button.secondary:hover { border-color:#46466a; }
+    button.danger { background:transparent; color:var(--bad); border:1px solid var(--bad); }
+    pre { background:#0b0b12; border:1px solid var(--line); border-radius:10px; padding:12px; overflow-x:auto; font:.78rem/1.5 var(--mono);
+      color:var(--hue-green); max-height:380px; }
+    table { width:100%; border-collapse:collapse; font-size:.84rem; margin-top:8px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; }
+    th { color:var(--hue-yellow); font:600 11px/1.3 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+    .pass { color:var(--hue-green); font-weight:700; }
     .fail { color:var(--bad); font-weight:700; }
+    .tier-box { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+    .tier { background:var(--ink-2); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:.82rem; }
+    .tier strong { color:var(--hue-cyan); }
+    .foot { margin-top:34px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; font:600 11px/1.4 var(--mono);
+      letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+    .foot .stripe { width:64px; height:4px; }
   </style>
 </head>
 <body>
 <main>
-  <div class="badges">
+  <header class="vhs">
+    <div class="osd" aria-hidden="true"><span class="play">&#9654; Play</span><span>CH 01 &middot; Gno.land onyx-1 &middot; Agent SDK</span><span class="rec">Rec</span></div>
+    <h1><span class="spectrum">Immaculate</span> Agent SDK Builder</h1>
+    <p class="sub">Consensus-safe autonomous agent &amp; Familiar assurance SDK on Gno.land. Verify RFC 6962 proofs offline in your browser, test spherical memory poisoning quarantine, or inspect live Onyx-1 deployments.</p>
+    <div class="badges">
     <span class="badge">Pure Fixed-Point Gno (Zero Floats)</span>
     <span class="badge">RFC 6962 / RFC 9162 Evidence</span>
     <span class="badge">Familiars &amp; MemoryVault</span>
     <span class="badge">MCP Stdio Server</span>
     <span class="badge">Ullumii + gnosh.ai + Local GPU</span>
   </div>
-  <h1>Immaculate Agent SDK Builder</h1>
-  <p class="sub">Consensus-safe autonomous agent &amp; Familiar assurance SDK on Gno.land. Verify RFC 6962 proofs offline in your browser, test spherical memory poisoning quarantine, or inspect live Onyx-1 deployments.</p>
+    <div class="stripe" aria-hidden="true"></div>
+  </header>
 
   <div class="tabs">
     <button class="tab active" data-tab="verifier">1. Offline RFC 6962 Verifier</button>
@@ -102,7 +166,7 @@
         <label>Caller Gno Address</label>
         <input id="callerAddr" value="g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t" />
         <label>Agent ID</label>
-        <input id="agentId" value="inkling-possum-familiar" />
+        <input id="agentId" value="demo-familiar" />
         <button id="btnAnchorTx" class="action">Build AnchorCheckpoint Tx (0.001 GNOT)</button>
         <button id="btnProTx" class="secondary">Build SubscribeAgent Pro Tx (10 GNOT / 30d)</button>
       </div>
@@ -136,6 +200,7 @@
     <h2>Live Result</h2>
     <pre id="output">Click "Verify RFC 6962 Proof" or switch tabs to explore live cryptographic proofs, Familiar MemoryVault quarantine, and Onyx-1 on-chain state.</pre>
   </section>
+  <footer class="foot"><span class="stripe" aria-hidden="true"></span><span>Arobi Technology Alliance, Inc.</span><a href="https://aura-genesis.org">aura-genesis.org</a></footer>
 </main>
 
 <script type="module">
