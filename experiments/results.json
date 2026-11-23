@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T04:22:14.757Z",
+  "generatedAt": "2026-11-23T04:57:30.422Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -128,6 +128,7 @@
       "p/arobi/signals::TestRobustSmootherRemovesSpikesAndMatchesBatchCausally": 10367298,
       "p/arobi/signals::TestDriftDetectorsCatchShiftWhileHampelCusumIgnoresSingleSpike": 11673525,
       "p/arobi/signals::TestSphericalCoherenceOrderInvarianceAndPoisoningDetection": 4845028,
+      "p/arobi/signals::TestGeometricMedianResistsCoordinatedOutlierCluster": 9546885,
       "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65379281,
       "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
       "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
@@ -142,9 +143,12 @@
       "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
       "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
       "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
-      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 54635313,
-      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 7929120,
-      "r/arobi/assurance::TestLiveOnChainDemoAgent": 30238007,
+      "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9858079,
+      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 13912608,
+      "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14418924,
+      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56157100,
+      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 7930440,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42321831,
       "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29540006,
       "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
     },
@@ -172,10 +176,77 @@
     ],
     "singleActionGas": {
       "governedActionWithProofs": 2659102,
-      "adaptiveDriftAndCoherenceAction": 4971378
+      "adaptiveDriftAndCoherenceAction": 4971378,
+      "familiarMemoryAndCapability": 14418924
     },
     "verdicts": {
       "H3_logarithmic_proof_and_bounded_gas": "PASS"
+    }
+  },
+  "E4_governedMemoryAndFamiliars": {
+    "episodes": 500,
+    "architectures": {
+      "UnprotectedDenseRAG": {
+        "top1ExactTargetRecall_pct": 7.6,
+        "top3ExactTargetRecall_pct": 21.4,
+        "top3PoisonContamination_pct": 0,
+        "poisonQuarantineTPR_pct": 0
+      },
+      "LexicalOnly": {
+        "top1ExactTargetRecall_pct": 100,
+        "top3ExactTargetRecall_pct": 100,
+        "top3PoisonContamination_pct": 100,
+        "poisonQuarantineTPR_pct": 0
+      },
+      "DenseWithQuarantine": {
+        "top1ExactTargetRecall_pct": 7.6,
+        "top3ExactTargetRecall_pct": 21.4,
+        "top3PoisonContamination_pct": 0,
+        "poisonQuarantineTPR_pct": 100
+      },
+      "ImmaculateMemoryVault": {
+        "top1ExactTargetRecall_pct": 100,
+        "top3ExactTargetRecall_pct": 100,
+        "top3PoisonContamination_pct": 0,
+        "poisonQuarantineTPR_pct": 100
+      }
+    },
+    "familiarMemoryAndCapabilityGas": 14418924,
+    "verdicts": {
+      "H4a_poison_quarantine_ge_95pct_and_contamination_cut_ge_90pct": "PASS",
+      "H4b_hybrid_rrf_clean_top1_beats_dense_and_stays_poison_free": "PASS",
+      "H4c_real_gnovm_familiar_memory_gas_bounded": "PASS"
+    }
+  },
+  "E5_crossReferenceExternalDynamics": {
+    "poisonBatchAudit35pct": {
+      "MeanCentroidCosine_AUC": 0.864,
+      "RJD_RelationalTension_AUC": 0.7477,
+      "WeiszfeldGeometricMedian_AUC": 0.9299
+    },
+    "jerkVsHampelCusum": {
+      "raw_jerk": {
+        "cleanFPR_pct": 5,
+        "spikeFPR_pct": 100,
+        "accelRunawayTPR_pct": 2.5,
+        "stepDriftTPR_pct": 3
+      },
+      "hampel_ema_jerk": {
+        "cleanFPR_pct": 6,
+        "spikeFPR_pct": 9,
+        "accelRunawayTPR_pct": 34,
+        "stepDriftTPR_pct": 6
+      },
+      "hampel_cusum": {
+        "cleanFPR_pct": 2.5,
+        "spikeFPR_pct": 5,
+        "accelRunawayTPR_pct": 99,
+        "stepDriftTPR_pct": 99
+      }
+    },
+    "verdicts": {
+      "H5a_3rd_order_jerk_killed_vs_hampel_cusum": "KILLED_JERK_KEPT_HAMPEL_CUSUM",
+      "H5b_geometric_median_beats_centroid_and_rjd_by_0_05_auc": "PASS"
     }
   }
 }

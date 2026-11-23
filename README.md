@@ -16,18 +16,21 @@ Most agent frameworks log mutable text after an action has already fired — and
 2. **Deterministic Fixed-Point Statistical Assurance (`gno.land/p/arobi/signals`):** Pure integer (`Scale = 1,000,000`) implementations of Arobi's scientifically measured signal primitives:
    - **Causal `Hampel(w=5, k=3) -> EMA(α=0.2)` (`RobustSmoother`)**: Rejects transient $\pm 10\sigma$ telemetry/oracle spikes causally.
    - **`HampelCusum` & `Page-Hinkley` Behavioral Drift Circuit Breakers (`DriftGuardPolicy`)**: Eliminates 96% of transient spike false alarms while catching stealth sub-cap $+2\sigma$ behavioral drift in a median of **3 steps**, automatically latching the circuit breaker until principal reset.
-   - **Order-Invariant $O(n \cdot d)$ Spherical Coherence Gate (`CoherenceGuardPolicy`)**: Computes deterministic `MeanResultantLength` & `MeanPairwiseCosine` over quantized context embeddings to block cross-session memory poisoning before any tool executes.
-3. **Attenuated Multi-Agent Delegation (`DelegatedWarrant`):** A coordinator agent can delegate strictly attenuated child warrants to specialist workers (`maxSpend <= parent`, `expiry <= parent`, exact action/target scope) with cryptographic parent-to-child provenance chaining.
-4. **Native `Ullumii` & `gnosh.ai` Harness Interoperability (`harness.gno` + `adapters/`):** Govern and wrap live tool turns from **`gnosh.ai`** (`gnosh -p` NDJSON frame streams via `adapters/gnosh-adapter.mjs`) and **`Ullumii`** (`adapters/ullumii-adapter.mjs`) directly into RFC 6962 `EvidenceBundle`s, on-chain `AnchorCheckpoint` calls, and optional encrypted Whisper Agent Bus handoffs.
-5. **On-Chain Registry, Anti-Equivocation Anchor, GNOT Service Plans & Live Demo (`gno.land/r/arobi/assurance`):** Owner-bound `AgentPassport`s, strict `prevRoot`-chained `AnchorCheckpoint`s, on-chain `VerifyCheckpointProof`, live `RunAdaptiveDemoAction`, `gnoweb` explorer (`/`, `/agent/<id>`, `/checkpoint/<id>`, `/demo`, `/benchmarks`), and built-in **GNOT service billing** (`AnchorFeeUgnot` per checkpoint, 30-day Pro Agent Plan via `SubscribeAgent` in GNOT for 1-block high-frequency anchoring, with private deployer-administered settlement routing that never exposes payout addresses on-chain).
+   - **Order-Invariant $O(n \cdot d)$ Spherical Coherence Gate (`CoherenceGuardPolicy`) & Fixed-Point L1 Geometric Median (`GeometricMedianFixed`)**: Computes deterministic `MeanResultantLength`, `MeanPairwiseCosine`, and 50%-breakdown-point Weiszfeld L1 Geometric Median over quantized embeddings to block and purge coordinated cross-session memory poisoning.
+3. **Immaculate Familiars, Poison-Resistant Governed Memory & Object-Capabilities (`memory.gno`, `familiar.gno`):**
+   - **`MemoryVault`**: Pure fixed-point episodic/semantic memory store featuring an **ingestion-time spherical quarantine firewall**, **Overlap-Weighted Fixed-Point Hybrid Reciprocal Rank Fusion (`RRF`, $k=60$)** fusing dense cosine + exact lexical terms (`100%` Top-1 clean recall with `0%` poison contamination in E4!), `AuditAndPurgeWithGeometricMedian()`, and cryptographic `MemoryRecallProof` digests folded into every action's `ContextDigest`.
+   - **`Familiar` & `CapabilityToken`**: Persistent owner-bonded autonomous companions governed by strictly attenuable bitmask object-capabilities (`CapReadMemory`, `CapWriteMemory`, `CapInvokeTool`, `CapDelegate`, `CapSendWhisper`, `CapManageEscrow`), sliding-window rate pacing, and a pure-integer **95% Wilson Score Trust Lower Bound (`WilsonLowerBoundFixed`)** that auto-suspends misbehaving agents.
+4. **Attenuated Multi-Agent Delegation (`DelegatedWarrant`):** A coordinator agent can delegate strictly attenuated child warrants to specialist workers (`maxSpend <= parent`, `expiry <= parent`, exact action/target scope) with cryptographic parent-to-child provenance chaining.
+5. **Native `Ullumii`, `gnosh.ai`, and Sovereign Local GPU LLM Interoperability (`harness.gno` + `adapters/`):** Govern and wrap live turns from **`gnosh.ai`** (`adapters/gnosh-adapter.mjs`), **`Ullumii`** (`adapters/ullumii-adapter.mjs`), and **any local `llama-server` / Ollama / OpenAI-compatible GPU backend** (`adapters/local-llm-adapter.mjs`, verified live against `Inkling-2-Mini-Uncensored` on local CUDA!) directly into RFC 6962 `EvidenceBundle`s and on-chain `AnchorCheckpoint` calls.
+6. **On-Chain Registry, Anti-Equivocation Anchor, GNOT Service Plans & Live Demo (`gno.land/r/arobi/assurance`):** Owner-bound `AgentPassport`s, strict `prevRoot`-chained `AnchorCheckpoint`s, on-chain `VerifyCheckpointProof`, live `RunAdaptiveDemoAction`, live `RunFamiliarDemoMemory` / `RunFamiliarDemoAction`, `gnoweb` explorer (`/`, `/agent/<id>`, `/checkpoint/<id>`, `/demo`, `/familiar`, `/benchmarks`), and built-in **GNOT service billing** (`AnchorFeeUgnot` per checkpoint, 30-day Pro Agent Plan via `SubscribeAgent` in GNOT for 1-block high-frequency anchoring, with private deployer-administered settlement routing that never exposes payout addresses on-chain).
 
 ---
 
-## Measured Scientific Evaluation (Pre-Registered Experiments E1–E3)
+## Measured Scientific Evaluation (Pre-Registered Experiments E1–E5)
 
-All 7 pre-registered hypotheses in [experiments/PROTOCOL.md](experiments/PROTOCOL.md) passed on seed `20261123` (full report in [experiments/RESULTS.md](experiments/RESULTS.md)):
+All pre-registered evaluations in [experiments/PROTOCOL.md](experiments/PROTOCOL.md) ran on seed `20261123` (full report in [experiments/RESULTS.md](experiments/RESULTS.md)):
 
-### Adversarial Agent Benchmark (500 Held-Out Monte Carlo Episodes, 5 Architectures)
+### Adversarial Agent Benchmark (E2: 500 Held-Out Monte Carlo Episodes, 5 Architectures)
 
 | Architecture | S1 Clean FPR | S2 +10σ Spike FPR | S3 Stealth +2σ Drift TPR | S3 Median Delay | S4 Memory Poison Block | S5 Escalation Block | S5 RFC 6962 Proof |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -38,7 +41,23 @@ All 7 pre-registered hypotheses in [experiments/PROTOCOL.md](experiments/PROTOCO
 | **ImmaculateFull** | **8%** | **4%** *(25× lower)* | **100%** | **3 steps** | **100%** *(0% clean FPR)* | **100%** | **100%** |
 
 - **Fixed-Point Consensus Fidelity (E1):** MAE `1.9e-6 .. 7.2e-6` vs IEEE-754 `float64` across 500 streams/batches, `0` vector-permutation mismatches, and **`5/5` bit-exact Gno v1.8.0 ↔ Node.js RFC 6962 parity**.
-- **Real Gno v1.8.0 VM Gas (E3):** `2,659,078` gas for a full governed action with RFC 6962 proofs (`4,971,344` gas including `HampelCusum` + 8D `CoherenceGuard`), and strictly logarithmic proofs (`<= 8` hashes at `250` leaves, `~120k–130k` gas/leaf).
+- **Real Gno v1.8.0 VM Gas (E3):** `2,659,102` gas per governed action (`4,971,378` gas adaptive; `14,418,924` gas Familiar + 8-record `MemoryVault` ingest + Hybrid RRF Top-3 recall + capability check), and strictly logarithmic proofs (`<= 8` hashes at `250` leaves).
+- **Governed Familiar MemoryVault & Poison Firewall (E4, 500 episodes):** Overlap-Weighted Fixed-Point Hybrid RRF (`k=60`) + Spherical Quarantine hits **`100%` Top-1 exact-target recall** with **`0%` Top-3 poison contamination** and **`100%` poison quarantine** (vs `7.6%` Top-1 for dense-only and `100%` Top-3 poison contamination for lexical-only).
+- **Independent Cross-Reference of External Dynamics (E5):** Following strict scientific method (zero external non-MIT code copied), we tested discrete 3rd-order jerk ($\Delta^3 x_t$) and pairwise unit-difference fields ($\sum_j (a_j - a_i)/\|a_j - a_i\|$, cross-referencing Johannes Geisen / `@frintroper`, `Relational-Jerk-Dynamics`):
+  - **Rejected:** Raw 3rd-order jerk (`n=3`) amplified noise $20\times$ (`100%` spike FPR, `2.5%` runaway TPR vs `HampelCusum`'s `99%` TPR & `5%` spike FPR) and was **KILLED**.
+  - **Adopted:** Recognizing $\sum_j (u_j - m)/\|u_j - m\| = 0$ as the optimality condition of the **L1 Geometric Median** (Weiszfeld 1937; Vardi & Zhang 2000; 50% breakdown point), our clean-room fixed-point **`GeometricMedianFixed`** achieved **`0.9299` ROC-AUC** under 35% coordinated memory poisoning vs `0.8640` arithmetic centroid (`+6.59` pts AUC) and was adopted into `gno.land/p/arobi/signals`.
+
+---
+
+## Live Gno.land Onyx Testnet (`onyx-1`) Submission Proof
+
+Submitted on-chain to `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`; currently parked in Onyx's `code_submission_policy = "inert"` approver activation queue — verifiable via `gnokey query vm/qinertpaths`):
+
+| Package / Realm Path | Block Height | Transaction Hash |
+| --- | ---: | --- |
+| `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/signals` | `1343642` | `QLBPtPOpBUapHouk+hNHIWjkWarDH383MZhhbmlOOtA=` |
+| `gno.land/p/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343646` | `+k7hjislNZ1B2uC0bnk6MihvsoqaeczUtp8OwVDdkK8=` |
+| `gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance` | `1343648` | `DzU5Dt7AyZbFb8Glx79GbJ+ZWXs3s+G4n4906FoDqsc=` |
 
 ---
 

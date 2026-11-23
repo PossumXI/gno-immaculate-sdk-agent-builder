@@ -150,3 +150,30 @@ func TestSphericalCoherenceOrderInvarianceAndPoisoningDetection(t *testing.T) {
 	uassert.True(t, evBad.Alarm)
 	uassert.True(t, scoreBad < 500000)
 }
+
+func TestGeometricMedianResistsCoordinatedOutlierCluster(t *testing.T) {
+	// 5 clean vectors near +e0 + 2 coordinated adversarial vectors near -e0 (28.6% poison).
+	batch := [][]int64{
+		{990000, 141000, 0, 0},
+		{995000, 100000, 0, 0},
+		{985000, 172000, 0, 0},
+		{992000, 126000, 0, 0},
+		{988000, 154000, 0, 0},
+		{-900000, 435000, 0, 0},
+		{-920000, 391000, 0, 0},
+	}
+	gm, err := GeometricMedianFixed(batch, 8)
+	uassert.NoError(t, err)
+	uassert.True(t, gm[0] > 900000)
+
+	// Strictly order-invariant under reversed batch order.
+	rev := make([][]int64, len(batch))
+	for i := range batch {
+		rev[i] = batch[len(batch)-1-i]
+	}
+	gmRev, err := GeometricMedianFixed(rev, 8)
+	uassert.NoError(t, err)
+	for j := range gm {
+		uassert.Equal(t, gm[j], gmRev[j])
+	}
+}

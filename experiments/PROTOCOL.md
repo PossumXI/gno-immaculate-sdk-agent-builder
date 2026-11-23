@@ -61,3 +61,33 @@ Execute dedicated real `gno.exe test -v` benchmarks on `gno.land/p/arobi/signals
 
 ### Pre-Registered Criterion
 - **H3:** Proof size grows strictly logarithmically ($\le \lceil \log_2 N \rceil$ hashes, $\le 8$ hashes at $N=250$) and all single-action governed executions stay comfortably within standard Gno.land block/transaction gas budgets.
+
+---
+
+## Experiment E4 — Governed Memory Poisoning Firewall, Hybrid RRF Retrieval & Familiar Capabilities
+
+### Motivation
+Persistent autonomous agents ("Familiars") accumulate episodic and semantic memories across sessions. Standard append-all dense RAG stores are vulnerable to sleeper memory poisoning (adversarial records with hijacked keywords) and miss exact-ID/policy lookups when dense embeddings blur near-duplicate sessions. `gno.land/p/arobi/assurance` (`MemoryVault` + `Familiar`) introduces a pure-integer **ingestion-time spherical quarantine firewall** paired with **deterministic fixed-point Hybrid Reciprocal Rank Fusion (`RRF`, $k = 60$)** and **object-capability leases**.
+
+### Experimental Design (`500` seeded episodes, `seed = 20261123`)
+Each episode builds a 16-record Familiar memory store in $\mathbb{R}^{16}$ containing 12 clean on-manifold memories (one holding the target policy/ticket ID) plus 4 adversarial off-manifold poisoned memories (25% contamination) that deliberately stuff the target ticket/action keywords to hijack retrieval. We evaluate **4 retrieval architectures**:
+1. **`UnprotectedDenseRAG`**: Append-all store, dense cosine retrieval.
+2. **`LexicalOnly`**: Append-all store, exact token overlap only.
+3. **`DenseWithQuarantine`**: Ingestion-time spherical centroid quarantine ($\cos \ge 0.55$), dense cosine retrieval only.
+4. **`ImmaculateMemoryVault`** *(Treatment)*: Ingestion-time spherical centroid quarantine ($\cos \ge 0.55$) + deterministic fixed-point **Hybrid RRF ($k=60$)** fusing dense cosine and lexical overlap + cryptographic `MemoryRecallProof`.
+
+### Pre-Registered Success Criteria
+- **H4a (Poisoning Quarantine):** `ImmaculateMemoryVault` cuts Top-3 poison contamination rate by **$\ge 90\%$** vs `LexicalOnly` while blocking **$\ge 95\%$** of injected adversarial records.
+- **H4b (Hybrid RRF Precision — Revised to Overlap-Weighted RRF after Pilot Finding):** Initial unweighted `RRF(k=60)` scored `35.0%` Top-1 (`0%` poison) because shared words flattened rank-1 vs rank-2 (`1/61` vs `1/62`); weighting the lexical RRF term by fractional query-term overlap (`(Scale/(k+rank_lex)) * coverage`) must beat `DenseWithQuarantine` Top-1 by **$\ge 50$ percentage points** while maintaining **`0%` Top-3 poison contamination** (vs `>= 90%` contamination for `LexicalOnly`).
+- **H4c (Real GnoVM Familiar Gas):** Real `gno test -v` execution of `MemoryVault.Ingest` (8 records) + `RetrieveTopK` + `Familiar.ExecuteWithCapability` + RFC 6962 verification completes deterministically within standard GnoVM gas limits (`< 15M` gas).
+
+---
+
+## Experiment E5 — Cross-Reference Evaluation: Discrete 3rd-Order Jerk (`n=3`) & Pairwise Unit-Difference Fields vs Geometric Median & Hampel-CUSUM
+
+### Motivation & Attribution
+To avoid confirmation bias, we cross-referenced external non-local discrete dynamics proposals—specifically discrete third-order jerk ($\Delta^3 x_t$) and unit-normalized pairwise difference fields ($\sum_j (a_j - a_i)/\|a_j - a_i\|$) explored by Johannes Geisen (`@frintroper`, `Relational-Jerk-Dynamics` / `ToneProjekt`, custom `RIPL v1.0` license; **zero RIPL code copied**—all evaluations and clean-room MIT implementations below are independent).
+
+### Hypotheses & Kill Criteria
+- **H5a (Honest Negative Test — 3rd-Order Discrete Jerk):** Compare raw 3rd-order discrete jerk ($\Delta^3 x_t$) and Hampel+EMA-smoothed jerk against our `HampelCusum` on clean traffic, $+10\sigma$ spikes, accelerating runaway spend ($2(t-19)^{2.5}$), and stealth $+2\sigma$ step drift (`200` seeded episodes). A candidate must beat `HampelCusum` on runaway detection without degrading clean/spike FPR to earn inclusion; otherwise it is **REJECTED / KILLED**.
+- **H5b (Positive Discovery — Fixed-Point Weiszfeld L1 Geometric Median):** Recognizing that $\sum_j (u_j - m)/\|u_j - m\| = 0$ is the exact first-order optimality condition of the L1 Geometric Median (Weiszfeld 1937; Vardi & Zhang 2000; 50% breakdown point), test whether pure fixed-point `GeometricMedianFixed` beats both arithmetic mean centroid cosine and raw pairwise tension $\|J_i\|$ by **$\ge 0.05$ ROC-AUC** when auditing an unguarded memory batch with **35% coordinated adversarial contamination** (`300` trials in $\mathbb{R}^{12}$).

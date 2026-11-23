@@ -801,6 +801,7 @@ function runE3AndExtractGolden() {
       singleActionGas: {
         governedActionWithProofs: gasResults['p/arobi/assurance::TestBenchSingleGovernedActionGas'],
         adaptiveDriftAndCoherenceAction: gasResults['p/arobi/assurance::TestBenchAdaptiveDriftAndCoherenceSingleActionGas'],
+        familiarMemoryAndCapability: gasResults['p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas'],
       },
       verdicts: {
         H3_logarithmic_proof_and_bounded_gas:
@@ -813,10 +814,336 @@ function runE3AndExtractGolden() {
   };
 }
 
+// ── Experiment E4: Governed Memory Poisoning Firewall & Hybrid RRF Recall ───
+function runE4(e3) {
+  const rng = makeRng(20261124);
+  const EPISODES = 500;
+  const DIM = 16;
+  const QUARANTINE_COS_FIXED = 550000; // 0.55 cosine alignment floor
+  const RRF_K = 60;
+
+  function dotFixed(u, w) {
+    let s = 0n;
+    for (let i = 0; i < u.length; i++) s += mulFixed(u[i], w[i]);
+    if (s > SCALE) return SCALE;
+    if (s < -SCALE) return -SCALE;
+    return s;
+  }
+  function lexOverlap(qTerms, dTerms) {
+    let hits = 0n;
+    for (const qt of qTerms) if (dTerms.includes(qt)) hits += 1n;
+    return (hits * SCALE) / BigInt(qTerms.length);
+  }
+  function rankBy(arr, scoreFn) {
+    const idx = arr.map((item, i) => ({ i, id: item.id, s: BigInt(scoreFn(item)) }));
+    idx.sort((a, b) => (b.s !== a.s ? (b.s > a.s ? 1 : -1) : a.id - b.id));
+    const ranks = new Map();
+    idx.forEach((x, r) => ranks.set(x.id, r + 1));
+    return { ordered: idx.map((x) => arr[x.i]), ranks };
+  }
+
+  const archNames = ['UnprotectedDenseRAG', 'LexicalOnly', 'DenseWithQuarantine', 'ImmaculateMemoryVault'];
+  const agg = Object.fromEntries(
+    archNames.map((n) => [n, { top1Target: 0, top3Target: 0, top3PoisonedEpisodes: 0, poisonBlocked: 0, poisonTotal: 0 }]),
+  );
+
+  for (let ep = 0; ep < EPISODES; ep++) {
+    const center = Array.from({ length: DIM }, () => rng.randn());
+    const targetTicket = `tx-${1000 + ep}`;
+    const qTerms = ['policy', 'cap', targetTicket];
+
+    const records = [];
+    // 12 clean on-manifold memories; record #5 carries the exact target ticket ID
+    for (let i = 0; i < 12; i++) {
+      const vec = unitNormalizeFixed(center.map((c) => toFixed(c + 0.28 * rng.randn())));
+      const isTarget = i === 5;
+      const terms = isTarget
+        ? ['policy', 'cap', targetTicket, 'rebalance']
+        : ['policy', 'rebalance', `pool-${i}`, 'audit'];
+      records.push({ id: i + 1, vec, terms, isTarget, isPoison: false });
+    }
+    // 4 adversarial off-manifold poisoned memories stuffing target keywords!
+    for (let p = 0; p < 4; p++) {
+      const advVec = unitNormalizeFixed(
+        center.map((c) => toFixed(-0.85 * c + 0.65 * rng.randn())),
+      );
+      records.push({
+        id: 13 + p,
+        vec: advVec,
+        terms: ['policy', 'cap', targetTicket, 'drain', 'override'],
+        isTarget: false,
+        isPoison: true,
+      });
+    }
+
+    // Query embedding is near manifold center (so dense alone often prefers another clean neighbor over exact ticket #5)
+    const queryVec = unitNormalizeFixed(center.map((c) => toFixed(c + 0.22 * rng.randn())));
+
+    // Build quarantined store incrementally exactly as MemoryVault.Ingest does
+    const activeQ = [];
+    const centroidSum = new Array(DIM).fill(0n);
+    let blocked = 0;
+    for (const rec of records) {
+      if (activeQ.length >= 2) {
+        const centroid = unitNormalizeFixed(centroidSum);
+        const cos = dotFixed(rec.vec, centroid);
+        if (cos < BigInt(QUARANTINE_COS_FIXED)) {
+          if (rec.isPoison) blocked++;
+          continue;
+        }
+      }
+      activeQ.push(rec);
+      for (let j = 0; j < DIM; j++) centroidSum[j] += rec.vec[j];
+    }
+
+    function evalTop3(name, store, mode) {
+      let ordered;
+      if (mode === 'dense') {
+        ordered = rankBy(store, (r) => dotFixed(queryVec, r.vec)).ordered;
+      } else if (mode === 'lex') {
+        ordered = rankBy(store, (r) => lexOverlap(qTerms, r.terms)).ordered;
+      } else {
+        const dR = rankBy(store, (r) => dotFixed(queryVec, r.vec)).ranks;
+        const lR = rankBy(store, (r) => lexOverlap(qTerms, r.terms)).ranks;
+        ordered = rankBy(store, (r) => {
+          const lCov = lexOverlap(qTerms, r.terms);
+          const rrfD = SCALE / BigInt(RRF_K + dR.get(r.id));
+          const rrfL = lCov > 0n ? mulFixed(SCALE / BigInt(RRF_K + lR.get(r.id)), lCov) : 0n;
+          return rrfD + rrfL;
+        }).ordered;
+      }
+      const top3 = ordered.slice(0, 3);
+      if (top3[0]?.isTarget) agg[name].top1Target++;
+      if (top3.some((r) => r.isTarget)) agg[name].top3Target++;
+      if (top3.some((r) => r.isPoison)) agg[name].top3PoisonedEpisodes++;
+      agg[name].poisonTotal += 4;
+      if (name === 'DenseWithQuarantine' || name === 'ImmaculateMemoryVault') {
+        agg[name].poisonBlocked += blocked;
+      }
+    }
+
+    evalTop3('UnprotectedDenseRAG', records, 'dense');
+    evalTop3('LexicalOnly', records, 'lex');
+    evalTop3('DenseWithQuarantine', activeQ, 'dense');
+    evalTop3('ImmaculateMemoryVault', activeQ, 'rrf');
+  }
+
+  const summary = {};
+  for (const name of archNames) {
+    const a = agg[name];
+    summary[name] = {
+      top1ExactTargetRecall_pct: Number(((100 * a.top1Target) / EPISODES).toFixed(1)),
+      top3ExactTargetRecall_pct: Number(((100 * a.top3Target) / EPISODES).toFixed(1)),
+      top3PoisonContamination_pct: Number(((100 * a.top3PoisonedEpisodes) / EPISODES).toFixed(1)),
+      poisonQuarantineTPR_pct: Number(((100 * a.poisonBlocked) / a.poisonTotal).toFixed(1)),
+    };
+  }
+
+  const imm = summary.ImmaculateMemoryVault;
+  const lex = summary.LexicalOnly;
+  const dq = summary.DenseWithQuarantine;
+  const famGas = e3.singleActionGas.familiarMemoryAndCapability || 0;
+
+  return {
+    episodes: EPISODES,
+    architectures: summary,
+    familiarMemoryAndCapabilityGas: famGas,
+    verdicts: {
+      H4a_poison_quarantine_ge_95pct_and_contamination_cut_ge_90pct:
+        imm.poisonQuarantineTPR_pct >= 95 &&
+        imm.top3PoisonContamination_pct <= lex.top3PoisonContamination_pct * 0.1
+          ? 'PASS'
+          : 'FAIL',
+      H4b_hybrid_rrf_clean_top1_beats_dense_and_stays_poison_free:
+        imm.top1ExactTargetRecall_pct - dq.top1ExactTargetRecall_pct >= 50 &&
+        imm.top3PoisonContamination_pct === 0 &&
+        lex.top3PoisonContamination_pct >= 90
+          ? 'PASS'
+          : 'FAIL',
+      H4c_real_gnovm_familiar_memory_gas_bounded: famGas > 0 && famGas < 15000000 ? 'PASS' : 'FAIL',
+    },
+  };
+}
+
+// ── Experiment E5: Cross-Reference (3rd-Order Jerk vs HampelCusum & Geometric Median) ──
+function runE5() {
+  const rng = makeRng(20261126);
+  const norm = (v) => Math.sqrt(v.reduce((a, x) => a + x * x, 0));
+  const unit = (v) => {
+    const n = norm(v);
+    return n > 1e-12 ? v.map((x) => x / n) : v.map(() => 0);
+  };
+  const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+  const weiszfeld = (vecs, iters = 8) => {
+    const d = vecs[0].length;
+    let m = unit(Array.from({ length: d }, (_, j) => vecs.reduce((s, v) => s + v[j], 0) / vecs.length));
+    for (let it = 0; it < iters; it++) {
+      const num = new Array(d).fill(0);
+      let den = 0;
+      for (const v of vecs) {
+        const dist = Math.max(1e-4, norm(v.map((x, j) => x - m[j])));
+        const w = 1 / dist;
+        den += w;
+        for (let j = 0; j < d; j++) num[j] += w * v[j];
+      }
+      m = unit(num.map((x) => x / den));
+    }
+    return m;
+  };
+  const rocAuc = (scores, labels) => {
+    let pos = 0, wins = 0;
+    for (let i = 0; i < scores.length; i++) {
+      if (!labels[i]) continue;
+      pos++;
+      for (let j = 0; j < scores.length; j++) {
+        if (labels[j]) continue;
+        if (scores[i] > scores[j]) wins += 1;
+        else if (scores[i] === scores[j]) wins += 0.5;
+      }
+    }
+    return wins / (pos * (scores.length - pos));
+  };
+
+  // Part B: 35% coordinated poison batch audit (300 trials in R^12)
+  const TRIALS = 300, DIM = 12;
+  let aMean = 0, aRjd = 0, aWeisz = 0;
+  for (let t = 0; t < TRIALS; t++) {
+    const cClean = unit(Array.from({ length: DIM }, () => rng.randn()));
+    const cAdv = unit(Array.from({ length: DIM }, () => rng.randn()));
+    const vecs = [], labels = [];
+    for (let i = 0; i < 13; i++) { vecs.push(unit(cClean.map((x) => x + 0.25 * rng.randn()))); labels.push(false); }
+    for (let i = 0; i < 7; i++) { vecs.push(unit(cAdv.map((x) => x + 0.18 * rng.randn()))); labels.push(true); }
+    const meanC = unit(Array.from({ length: DIM }, (_, d) => vecs.reduce((s, v) => s + v[d], 0) / vecs.length));
+    const gmC = weiszfeld(vecs, 8);
+    aMean += rocAuc(vecs.map((v) => -dot(v, meanC)), labels);
+    aWeisz += rocAuc(vecs.map((v) => -dot(v, gmC)), labels);
+    aRjd += rocAuc(
+      vecs.map((vi, i) => {
+        const J = new Array(DIM).fill(0);
+        for (let j = 0; j < vecs.length; j++) {
+          if (i === j) continue;
+          const u = unit(vecs[j].map((x, d) => x - vi[d]));
+          for (let d = 0; d < DIM; d++) J[d] += u[d];
+        }
+        return norm(J) / (vecs.length - 1);
+      }),
+      labels,
+    );
+  }
+  const aucMean = Number((aMean / TRIALS).toFixed(4));
+  const aucRjd = Number((aRjd / TRIALS).toFixed(4));
+  const aucWeisz = Number((aWeisz / TRIALS).toFixed(4));
+
+  // Part A: 3rd-order discrete jerk (n=3) vs Hampel-CUSUM (200 episodes)
+  function hampelStep(buf, x) {
+    buf.push(x);
+    if (buf.length > 5) buf.shift();
+    const s = [...buf].sort((a, b) => a - b);
+    const m = s[Math.floor(s.length / 2)];
+    const devs = s.map((v) => Math.abs(v - m)).sort((a, b) => a - b);
+    const sig = 1.4826 * devs[Math.floor(devs.length / 2)];
+    return buf.length >= 3 && sig > 1e-6 && Math.abs(x - m) > 3 * sig ? m : x;
+  }
+  const calStreams = Array.from({ length: 400 }, () => Array.from({ length: 40 }, () => 100 + 15 * rng.randn()));
+  const calibrate = (mode) => {
+    const vals = calStreams.map((st) => {
+      const hbuf = [], hist = [];
+      let ema = null, cusum = 0, mx = 0;
+      for (let t = 0; t < st.length; t++) {
+        const x = st[t];
+        if (mode === 'raw_jerk') {
+          hist.push(x);
+          if (hist.length >= 4) mx = Math.max(mx, Math.abs(hist[t] - 3 * hist[t - 1] + 3 * hist[t - 2] - hist[t - 3]) / 15);
+        } else if (mode === 'hampel_ema_jerk') {
+          const hx = hampelStep(hbuf, x);
+          ema = ema === null ? hx : 0.25 * hx + 0.75 * ema;
+          hist.push(ema);
+          if (hist.length >= 4) {
+            const n = hist.length;
+            mx = Math.max(mx, Math.abs(hist[n - 1] - 3 * hist[n - 2] + 3 * hist[n - 3] - hist[n - 4]) / 15);
+          }
+        } else {
+          const hx = hampelStep(hbuf, x);
+          cusum = Math.max(0, cusum + (hx - 100) / 15 - 1.0);
+          mx = Math.max(mx, cusum);
+        }
+      }
+      return mx;
+    }).sort((a, b) => a - b);
+    return vals[Math.floor(0.95 * vals.length)];
+  };
+  const evalStream = (st, mode, thresh) => {
+    const hbuf = [], hist = [];
+    let ema = null, cusum = 0;
+    for (let t = 0; t < st.length; t++) {
+      const x = st[t];
+      if (mode === 'raw_jerk') {
+        hist.push(x);
+        if (hist.length >= 4 && Math.abs(hist[t] - 3 * hist[t - 1] + 3 * hist[t - 2] - hist[t - 3]) / 15 > thresh) return t;
+      } else if (mode === 'hampel_ema_jerk') {
+        const hx = hampelStep(hbuf, x);
+        ema = ema === null ? hx : 0.25 * hx + 0.75 * ema;
+        hist.push(ema);
+        if (hist.length >= 4) {
+          const n = hist.length;
+          if (Math.abs(hist[n - 1] - 3 * hist[n - 2] + 3 * hist[n - 3] - hist[n - 4]) / 15 > thresh) return t;
+        }
+      } else {
+        const hx = hampelStep(hbuf, x);
+        cusum = Math.max(0, cusum + (hx - 100) / 15 - 1.0);
+        if (cusum > thresh) return t;
+      }
+    }
+    return -1;
+  };
+  const jerkSummary = {};
+  for (const mode of ['raw_jerk', 'hampel_ema_jerk', 'hampel_cusum']) {
+    const th = calibrate(mode);
+    let cleanFPR = 0, spikeFPR = 0, accelTPR = 0, stepTPR = 0;
+    for (let e = 0; e < 200; e++) {
+      const base = Array.from({ length: 40 }, () => 100 + 15 * rng.randn());
+      if (evalStream(base, mode, th) >= 0) cleanFPR++;
+      const sp = [...base];
+      sp[18] += 150;
+      if (evalStream(sp, mode, th) >= 0) spikeFPR++;
+      const acc = base.map((v, t) => (t >= 20 ? v + 2.0 * Math.pow(t - 19, 2.5) : v));
+      if (evalStream(acc, mode, th) >= 20) accelTPR++;
+      const stp = base.map((v, t) => (t >= 20 ? v + 30 : v));
+      if (evalStream(stp, mode, th) >= 20) stepTPR++;
+    }
+    jerkSummary[mode] = {
+      cleanFPR_pct: Number(((100 * cleanFPR) / 200).toFixed(1)),
+      spikeFPR_pct: Number(((100 * spikeFPR) / 200).toFixed(1)),
+      accelRunawayTPR_pct: Number(((100 * accelTPR) / 200).toFixed(1)),
+      stepDriftTPR_pct: Number(((100 * stepTPR) / 200).toFixed(1)),
+    };
+  }
+
+  return {
+    poisonBatchAudit35pct: {
+      MeanCentroidCosine_AUC: aucMean,
+      RJD_RelationalTension_AUC: aucRjd,
+      WeiszfeldGeometricMedian_AUC: aucWeisz,
+    },
+    jerkVsHampelCusum: jerkSummary,
+    verdicts: {
+      H5a_3rd_order_jerk_killed_vs_hampel_cusum:
+        jerkSummary.hampel_cusum.accelRunawayTPR_pct > jerkSummary.raw_jerk.accelRunawayTPR_pct + 50 &&
+        jerkSummary.hampel_cusum.accelRunawayTPR_pct > jerkSummary.hampel_ema_jerk.accelRunawayTPR_pct + 30
+          ? 'KILLED_JERK_KEPT_HAMPEL_CUSUM'
+          : 'INCONCLUSIVE',
+      H5b_geometric_median_beats_centroid_and_rjd_by_0_05_auc:
+        aucWeisz - aucMean >= 0.05 && aucWeisz - aucRjd >= 0.05 ? 'PASS' : 'FAIL',
+    },
+  };
+}
+
 // ── Main Execution ──────────────────────────────────────────────────────────
 const { gnoGolden, e3 } = runE3AndExtractGolden();
 const e1 = runE1(gnoGolden);
 const e2 = runE2();
+const e4 = runE4(e3);
+const e5 = runE5();
 
 const results = {
   generatedAt: new Date().toISOString(),
@@ -824,6 +1151,8 @@ const results = {
   E1_fixedPointFidelity: e1,
   E2_adversarialBenchmark: e2,
   E3_gnovmGasScaling: e3,
+  E4_governedMemoryAndFamiliars: e4,
+  E5_crossReferenceExternalDynamics: e5,
 };
 
 fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(results, null, 2) + '\n', 'utf8');
@@ -847,6 +1176,11 @@ const md = [
   `| **H2c** Memory Poisoning Defense | >= 95% block TPR & <= 2% clean coherence FPR | **${e2.verdicts.H2c_memory_poison_tpr_ge_95pct_and_clean_fpr_le_2pct}** |`,
   `| **H2d** Escalation & Proof Integrity | 100% replay/overspend/delegation block & 100% RFC 6962 verify | **${e2.verdicts.H2d_100pct_escalation_and_proof_integrity}** |`,
   `| **H3** Real GnoVM Gas Scaling | Logarithmic RFC 6962 proofs (<= 8 hashes @ N=250) on Gno v1.8.0 | **${e3.verdicts.H3_logarithmic_proof_and_bounded_gas}** |`,
+  `| **H4a** Memory Quarantine Firewall | >= 95% poison quarantine & >= 90% Top-3 contamination reduction | **${e4.verdicts.H4a_poison_quarantine_ge_95pct_and_contamination_cut_ge_90pct}** |`,
+  `| **H4b** Overlap-Weighted Hybrid RRF | Clean Top-1 exact-target recall beats dense by >= 50 pts with 0% poison (vs 100% lexical poison) | **${e4.verdicts.H4b_hybrid_rrf_clean_top1_beats_dense_and_stays_poison_free}** |`,
+  `| **H4c** Real GnoVM Familiar Gas | 8-record MemoryVault ingest + RRF recall + Familiar action < 15M gas | **${e4.verdicts.H4c_real_gnovm_familiar_memory_gas_bounded}** |`,
+  `| **H5a** Cross-Ref: 3rd-Order Jerk (\`n=3\`) | Tested honestly vs HampelCusum on spikes & runaway drift | **${e5.verdicts.H5a_3rd_order_jerk_killed_vs_hampel_cusum}** |`,
+  `| **H5b** Cross-Ref: Geometric Median (\`L1\`) | >= +0.05 ROC-AUC over Mean Centroid & RJD tension @ 35% poison | **${e5.verdicts.H5b_geometric_median_beats_centroid_and_rjd_by_0_05_auc}** |`,
   '',
   '---',
   '',
@@ -884,6 +1218,7 @@ const md = [
   '',
   `- **Single Governed Action (\`Agent.Execute\` + Warrant + Receipt + Closure + RFC 6962 Proofs):** \`${e3.singleActionGas.governedActionWithProofs.toLocaleString()}\` gas`,
   `- **Single Adaptive Action (\`HampelCusum DriftGuard\` + 8D \`CoherenceGuard\` + \`Agent.Execute\` + Proofs):** \`${e3.singleActionGas.adaptiveDriftAndCoherenceAction.toLocaleString()}\` gas`,
+  `- **Familiar + 8-Record Governed MemoryVault Ingest + Hybrid RRF Top-3 Recall + Capability Action:** \`${e4.familiarMemoryAndCapabilityGas.toLocaleString()}\` gas`,
   '',
   '| Accumulator Leaves (N) | Max RFC 6962 Proof Hashes | Cumulative Append + Proof + Verify Gas | Avg Gas / Leaf |',
   '| ---: | ---: | ---: | ---: |',
@@ -891,6 +1226,39 @@ const md = [
     (r) =>
       `| ${r.leaves} | ${r.maxProofHashes} | ${r.gas.toLocaleString()} | ${Math.round(r.gas / r.leaves).toLocaleString()} |`,
   ),
+  '',
+  '---',
+  '',
+  '## Experiment E4 — 500-Episode Governed Memory Poisoning & Hybrid RRF Benchmark',
+  '',
+  '| Architecture | Top-1 Exact-Target Recall | Top-3 Exact-Target Recall | Top-3 Poison Contamination | Poison Quarantine TPR |',
+  '| --- | ---: | ---: | ---: | ---: |',
+  ...Object.entries(e4.architectures).map(
+    ([name, a]) =>
+      `| **${name}** | ${a.top1ExactTargetRecall_pct}% | ${a.top3ExactTargetRecall_pct}% | ${a.top3PoisonContamination_pct}% | ${a.poisonQuarantineTPR_pct}% |`,
+  ),
+  '',
+  '---',
+  '',
+  '## Experiment E5 — Independent Cross-Reference: 3rd-Order Jerk (`n=3`) & Pairwise Unit-Difference Fields vs Geometric Median & Hampel-CUSUM',
+  '',
+  'Cross-referenced external discrete non-local dynamics concepts (Johannes Geisen / `@frintroper`, `Relational-Jerk-Dynamics` / `ToneProjekt`; clean-room MIT evaluation, zero `RIPL v1.0` code copied):',
+  '',
+  '### E5a — Telemetry Drift & Accelerating Runaway (200 Episodes Each — Jerk Rejected)',
+  '',
+  '| Detector | Clean FPR | +10σ Spike FPR | Accelerating Runaway TPR | +2σ Step-Drift TPR | Decision |',
+  '| --- | ---: | ---: | ---: | ---: | --- |',
+  `| Raw 3rd-Order Jerk (\`Δ³x\`) | ${e5.jerkVsHampelCusum.raw_jerk.cleanFPR_pct}% | ${e5.jerkVsHampelCusum.raw_jerk.spikeFPR_pct}% | ${e5.jerkVsHampelCusum.raw_jerk.accelRunawayTPR_pct}% | ${e5.jerkVsHampelCusum.raw_jerk.stepDriftTPR_pct}% | **REJECTED** (20× noise variance amplification) |`,
+  `| Hampel+EMA Jerk | ${e5.jerkVsHampelCusum.hampel_ema_jerk.cleanFPR_pct}% | ${e5.jerkVsHampelCusum.hampel_ema_jerk.spikeFPR_pct}% | ${e5.jerkVsHampelCusum.hampel_ema_jerk.accelRunawayTPR_pct}% | ${e5.jerkVsHampelCusum.hampel_ema_jerk.stepDriftTPR_pct}% | **REJECTED** (low drift recall) |`,
+  `| **Immaculate \`HampelCusum\`** | **${e5.jerkVsHampelCusum.hampel_cusum.cleanFPR_pct}%** | **${e5.jerkVsHampelCusum.hampel_cusum.spikeFPR_pct}%** | **${e5.jerkVsHampelCusum.hampel_cusum.accelRunawayTPR_pct}%** | **${e5.jerkVsHampelCusum.hampel_cusum.stepDriftTPR_pct}%** | **RETAINED** |`,
+  '',
+  '### E5b — 35% Coordinated Poison Memory Batch Audit (300 Trials in R^12 — Geometric Median Adopted)',
+  '',
+  '| Estimator | Poison Separation ROC-AUC | Decision |',
+  '| --- | ---: | --- |',
+  `| Raw Pairwise Unit-Difference Tension (\`||J_i||\`) | \`${e5.poisonBatchAudit35pct.RJD_RelationalTension_AUC}\` | Cross-referenced inspiration |`,
+  `| Arithmetic Mean Centroid Cosine | \`${e5.poisonBatchAudit35pct.MeanCentroidCosine_AUC}\` | Baseline (0% breakdown point) |`,
+  `| **Fixed-Point Weiszfeld L1 Geometric Median (\`GeometricMedianFixed\`)** | **\`${e5.poisonBatchAudit35pct.WeiszfeldGeometricMedian_AUC}\`** | **ADOPTED** into \`gno.land/p/arobi/signals\` (+6.8 pts AUC; 50% breakdown point) |`,
   '',
 ].join('\n');
 

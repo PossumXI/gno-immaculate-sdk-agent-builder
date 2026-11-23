@@ -70,13 +70,17 @@ var (
 	anchors    []sdk.AnchorRecord
 	globalAcc  sdk.Accumulator
 
-	// Built-in interactive governed demo agent powered directly by gno.land/p/arobi/assurance.
-	demoAgent      *sdk.Agent
-	demoDriftGuard *sdk.DriftGuardPolicy
-	demoCoherence  *sdk.CoherenceGuardPolicy
-	demoLastOut    string
-	demoLastErr    string
-	demoLastRoot   string
+	// Built-in interactive governed demo agent & Familiar powered directly by gno.land/p/arobi/assurance.
+	demoAgent            *sdk.Agent
+	demoDriftGuard       *sdk.DriftGuardPolicy
+	demoCoherence        *sdk.CoherenceGuardPolicy
+	demoFamiliar         *sdk.Familiar
+	demoFamiliarLastOut  string
+	demoFamiliarLastErr  string
+	demoFamiliarLastRoot string
+	demoLastOut          string
+	demoLastErr          string
+	demoLastRoot         string
 )
 
 // ── Private Operator & Settlement Configuration ──────────────────────────────
@@ -480,6 +484,97 @@ func ResetDemoCircuitBreaker(cur realm) {
 	if demoDriftGuard != nil {
 		demoDriftGuard.Reset()
 	}
+}
+
+func demoFamiliarHandle(w sdk.EffectWarrant, input []byte) ([]byte, []byte, int64, error) {
+	return []byte("familiar:" + w.Action + ":" + string(input)), []byte("warrant:" + strconv.FormatUint(w.ID, 10)), w.MaxSpendUgnot, nil
+}
+
+func ensureDemoFamiliar() *sdk.Familiar {
+	if demoFamiliar != nil {
+		return demoFamiliar
+	}
+	b := sdk.NewAgentBuilder("immaculate-demo-familiar").
+		WithChain(runtime.ChainID(), "gno.land/r/arobi/assurance").
+		WithPrincipal("g1familiar0000000000000000000000000000000").
+		AllowActions("rebalance", "recall_brief").
+		AllowTargets("pool:gnot-usdc", "workspace:main").
+		WithBudgetCap(5000).
+		WithCoherenceGuard(650000, false, false, false).
+		WithTool(sdk.ToolSpec{Name: "rebalance", RiskTier: sdk.RiskLow, MaxBudgetUgnot: 5000}, demoFamiliarHandle).
+		WithTool(sdk.ToolSpec{Name: "recall_brief", RiskTier: sdk.RiskLow, MaxBudgetUgnot: 1000}, demoFamiliarHandle)
+	fam, err := b.BuildFamiliar(
+		sdk.CapReadMemory|sdk.CapWriteMemory|sdk.CapInvokeTool|sdk.CapDelegate|sdk.CapSendWhisper,
+		2000,
+		50,
+		100,
+		0,
+		999999999,
+		600000,
+		200000,
+	)
+	if err != nil {
+		panic("failed to initialize demo familiar: " + err.Error())
+	}
+	_, _ = fam.Remember(sdk.MemoryKindEpisodic, []byte("pool gnot-usdc target ratio 50-50"), []int64{980000, 199000, 10000, 0}, signals.Scale, 1)
+	_, _ = fam.Remember(sdk.MemoryKindSemantic, []byte("treasury policy cap 5000ugnot max slippage 50bps"), []int64{990000, 140000, 15000, 0}, signals.Scale, 2)
+	demoFamiliar = fam
+	return demoFamiliar
+}
+
+// RunFamiliarDemoMemory ingests a memory into the built-in Familiar's MemoryVault through
+// the spherical poisoning firewall (pass negative xFixed to test adversarial quarantine!).
+func RunFamiliarDemoMemory(cur realm, note string, xFixed, yFixed int64) string {
+	fam := ensureDemoFamiliar()
+	rec, err := fam.Remember(sdk.MemoryKindEpisodic, []byte(note), []int64{xFixed, yFixed, 10000, 0}, signals.Scale, runtime.ChainHeight())
+	if err != nil {
+		panic(err.Error())
+	}
+	chain.Emit("ImmaculateFamiliarMemory",
+		"familiar_id", fam.ID,
+		"record_id", strconv.FormatUint(rec.RecordID, 10),
+		"reason", rec.ReasonCode,
+		"admitted", strconv.FormatBool(rec.Admitted),
+		"quarantined", strconv.FormatBool(rec.Quarantined),
+	)
+	return rec.ReasonCode + "|" + strconv.FormatUint(rec.RecordID, 10) + "|" + strconv.Itoa(fam.Memory.QuarantinedCount())
+}
+
+// RunFamiliarDemoAction executes a memory-grounded, capability-checked action on the built-in Familiar.
+func RunFamiliarDemoAction(cur realm, action, target, queryText string, budgetUgnot int64) string {
+	fam := ensureDemoFamiliar()
+	caller := cur.Previous().Address().String()
+	out, bundle, proof, err := fam.ExecuteWithCapability(
+		sdk.CapReadMemory,
+		caller,
+		action,
+		target,
+		[]byte(queryText),
+		[]int64{985000, 170000, 12000, 0},
+		queryText,
+		2,
+		budgetUgnot,
+		runtime.ChainHeight(),
+	)
+	if err != nil {
+		demoFamiliarLastOut = ""
+		demoFamiliarLastErr = err.Error()
+		return "DENY|" + err.Error()
+	}
+	if vErr := bundle.Verify(); vErr != nil {
+		panic("familiar evidence verify failed: " + vErr.Error())
+	}
+	demoFamiliarLastOut = string(out)
+	demoFamiliarLastErr = ""
+	demoFamiliarLastRoot = sdk.Hex(bundle.AccumulatorRoot)
+	chain.Emit("ImmaculateFamiliarAction",
+		"familiar_id", fam.ID,
+		"action", action,
+		"recall_digest", sdk.Hex(proof.Digest()),
+		"acc_root", demoFamiliarLastRoot,
+		"trust_lb_fixed", strconv.FormatInt(fam.Trust.LowerBoundFixed(), 10),
+	)
+	return "ALLOW|" + sdk.Hex(proof.Digest())[:16] + "|" + demoFamiliarLastRoot
 }
 
 // ── Public Read & Proof Queries ──────────────────────────────────────────────

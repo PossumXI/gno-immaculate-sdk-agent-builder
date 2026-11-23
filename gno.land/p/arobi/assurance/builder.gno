@@ -187,3 +187,40 @@ func (b *AgentBuilder) Build() (*Agent, error) {
 	}
 	return ag, nil
 }
+
+// BuildFamiliar builds the governed Agent and wraps it as an owner-bonded Familiar with
+// a poison-resistant Hybrid RRF MemoryVault, attenuated CapabilityToken, and Wilson TrustLedger.
+func (b *AgentBuilder) BuildFamiliar(
+	capMask uint32,
+	maxSpendUgnot int64,
+	maxCallsPerWindow uint64,
+	windowBlocks int64,
+	issuedHeight int64,
+	expiryHeight int64,
+	quarantineThresholdFixed int64,
+	minTrustFloorFixed int64,
+) (*Familiar, error) {
+	ag, err := b.Build()
+	if err != nil {
+		return nil, err
+	}
+	vault := NewMemoryVault(MemoryVaultConfig{
+		VaultID:                  b.cfg.AgentID + "-memory",
+		QuarantineThresholdFixed: quarantineThresholdFixed,
+		MinTrustedAnchors:        2,
+		HalfLifeBlocks:           1000,
+		RRFK:                     DefaultRRFK,
+	})
+	tok := CapabilityToken{
+		ID:                1,
+		FamiliarID:        b.cfg.AgentID,
+		Owner:             b.cfg.Principal,
+		GrantMask:         capMask,
+		MaxSpendUgnot:     maxSpendUgnot,
+		MaxCallsPerWindow: maxCallsPerWindow,
+		WindowBlocks:      windowBlocks,
+		IssuedHeight:      issuedHeight,
+		ExpiryHeight:      expiryHeight,
+	}
+	return NewFamiliar(b.cfg.AgentID, b.cfg.Principal, ag, vault, b.coherenceGuard, tok, minTrustFloorFixed)
+}

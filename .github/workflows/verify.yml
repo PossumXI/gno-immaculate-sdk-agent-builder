@@ -35,9 +35,9 @@ jobs:
         env:
           GNO_SRC: /tmp/gno-v1.8.0
         run: bash scripts/run-gno-tests.sh
-      - name: Run pre-registered scientific experiments (E1, E2, E3)
+      - name: Run pre-registered scientific experiments (E1, E2, E3, E4, E5)
         env:
           GNO_SRC: /tmp/gno-v1.8.0
         run: |
           node experiments/run_experiments.mjs
-          node -e "const r = JSON.parse(require('fs').readFileSync('experiments/results.json','utf8')); const all = {...r.E1_fixedPointFidelity.verdicts, ...r.E2_adversarialBenchmark.verdicts, ...r.E3_gnovmGasScaling.verdicts}; console.log(all); if (Object.values(all).some(v => v !== 'PASS')) process.exit(1);"
+          node -e "const r = JSON.parse(require('fs').readFileSync('experiments/results.json','utf8')); const all = {...r.E1_fixedPointFidelity.verdicts, ...r.E2_adversarialBenchmark.verdicts, ...r.E3_gnovmGasScaling.verdicts, ...r.E4_governedMemoryAndFamiliars.verdicts, ...r.E5_crossReferenceExternalDynamics.verdicts}; console.log(all); if (Object.values(all).some(v => v !== 'PASS' && v !== 'KILLED_JERK_KEPT_HAMPEL_CUSUM')) process.exit(1);"

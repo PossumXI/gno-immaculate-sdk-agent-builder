@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GnoshAssuranceSession, harnessFrameDigest } from './gnosh-adapter.mjs';
 import { UllumiiAssuranceBridge } from './ullumii-adapter.mjs';
+import { LocalLLMAssuranceRunner } from './local-llm-adapter.mjs';
 import { verifyEvidenceBundle } from '../verifier/verify-evidence.mjs';
 
 test('gnosh.ai NDJSON frame stream builds verified RFC 6962 bundles and AnchorCheckpoint tx', () => {
@@ -84,4 +85,44 @@ test('Ullumii bridge records governed MCP actions and exports Whisper cross-harn
   assert.equal(handoff.toHarness, 'gnosh.ai');
   assert.equal(handoff.evidenceRootHex, b.accumulatorRoot);
   assert.match(handoff.payloadDigestHex, /^[0-9a-f]{64}$/);
+});
+
+test('LocalLLMAssuranceRunner governs local OpenAI/llama-server turns and refuses policy violations', async () => {
+  let called = 0;
+  const mockFetch = async () => {
+    called++;
+    return {
+      ok: true,
+      async json() {
+        return {
+          model: 'inkling-2-mini-local',
+          choices: [{ finish_reason: 'stop', message: { content: '3 hours 25 minutes', reasoning_content: '13:05 - 09:40' } }],
+          usage: { prompt_tokens: 20, completion_tokens: 10 },
+          timings: { predicted_per_second: 12.5 },
+        };
+      },
+    };
+  };
+
+  const runner = new LocalLLMAssuranceRunner({
+    baseUrl: 'http://127.0.0.1:18088/v1',
+    model: 'inkling-2-mini-local',
+    principal: 'g1principal000000000000000000000000000000',
+    maxBudgetUgnot: 500,
+    fetchImpl: mockFetch,
+  });
+
+  // Allowed turn calls endpoint and yields self-verifying RFC 6962 bundle.
+  const ok = await runner.complete({ prompt: 'Duration 09:40 to 13:05?', budgetUgnot: 100, height: 10 });
+  assert.equal(ok.refused, false);
+  assert.equal(ok.content, '3 hours 25 minutes');
+  assert.equal(verifyEvidenceBundle(ok.bundle).verified, true);
+  assert.equal(called, 1);
+
+  // Overspend refuses BEFORE touching LLM endpoint!
+  const denied = await runner.complete({ prompt: 'Expensive call', budgetUgnot: 9999, height: 11 });
+  assert.equal(denied.refused, true);
+  assert.equal(denied.reason, 'BUDGET_CAP_EXCEEDED');
+  assert.equal(verifyEvidenceBundle(denied.bundle).verified, true);
+  assert.equal(called, 1);
 });

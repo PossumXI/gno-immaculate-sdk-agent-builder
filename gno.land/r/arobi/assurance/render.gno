@@ -23,6 +23,9 @@ func Render(path string) string {
 	if clean == "demo" {
 		return renderDemo()
 	}
+	if clean == "familiar" {
+		return renderFamiliar()
+	}
 	if clean == "benchmarks" {
 		return renderBenchmarks()
 	}
@@ -49,7 +52,8 @@ func renderHome() string {
 	b.WriteString("| Checkpoint Anchor Service Fee | `" + strconv.FormatInt(anchorFeeUgnot, 10) + "ugnot` per checkpoint |\n")
 	b.WriteString("| Pro Agent Plan (30 days) | `" + strconv.FormatInt(agentPlanPriceUgnot, 10) + "ugnot` (1-block anchor cadence) |\n")
 	b.WriteString("| Built-In Demo Agent | [Inspect Live Demo Evidence](/r/arobi/assurance:demo) |\n")
-	b.WriteString("| Scientific Benchmarks | [Measured Evaluation (E1–E3)](/r/arobi/assurance:benchmarks) |\n\n")
+	b.WriteString("| Built-In Familiar & Governed Memory | [Inspect Familiar Vault & Capabilities](/r/arobi/assurance:familiar) |\n")
+	b.WriteString("| Scientific Benchmarks | [Measured Evaluation (E1–E4)](/r/arobi/assurance:benchmarks) |\n\n")
 
 	b.WriteString("## Registered Agent Passports\n\n")
 	if len(agentOrder) == 0 {
@@ -189,9 +193,9 @@ func renderDemo() string {
 
 func renderBenchmarks() string {
 	var b strings.Builder
-	b.WriteString("# Measured Scientific Benchmarks (Experiments E1–E3, Seed `20261123`)\n\n")
+	b.WriteString("# Measured Scientific Benchmarks (Experiments E1–E5, Seed `20261123`)\n\n")
 	b.WriteString("Pre-registered evaluation comparing deterministic fixed-point Gno primitives (`gno.land/p/arobi/signals`) ")
-	b.WriteString("and full Arobi Assurance governance (`ImmaculateFull`) against static and naive baselines across 500 Monte Carlo episodes.\n\n")
+	b.WriteString("and full Arobi Assurance governance (`ImmaculateFull`, `ImmaculateMemoryVault`, `GeometricMedianFixed`) against static and naive baselines.\n\n")
 	b.WriteString("| Architecture | +10σ Spike FPR | Stealth +2σ Drift TPR | Median Delay | Memory Poison Block | Escalation Block | RFC 6962 Verified |\n")
 	b.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	b.WriteString("| StaticCapOnly | 0% | 0% | N/A | 0% | 33% | 0% |\n")
@@ -199,7 +203,32 @@ func renderBenchmarks() string {
 	b.WriteString("| RawCUSUM | 100% | 100% | 2 steps | 0% | 33% | 0% |\n")
 	b.WriteString("| **ImmaculateFull (HampelCusum + Coherence + Warrants)** | **4%** | **100%** | **3 steps** | **100%** | **100%** | **100%** |\n\n")
 	b.WriteString("- **Fixed-Point Fidelity (E1):** MAE `1.9e-6 .. 7.2e-6` vs float64; `0` permutation diffs; `5/5` bit-exact Gno v1.8.0 ↔ JS RFC 6962 parity.\n")
-	b.WriteString("- **Real Gno v1.8.0 VM Gas (E3):** `2,659,078` gas per governed action (`4,971,344` gas with `HampelCusum` + 8D `CoherenceGuard`); `<= 8` proof hashes at `250` leaves.\n\n")
-	b.WriteString("[Inspect Live Demo](/r/arobi/assurance:demo) · [Back to Hub](/r/arobi/assurance)\n")
+	b.WriteString("- **Real Gno v1.8.0 VM Gas (E3):** `2,659,102` gas per governed action (`4,971,378` gas adaptive; `14,418,924` gas Familiar + 8-record MemoryVault + Hybrid RRF); `<= 8` proof hashes at `250` leaves.\n")
+	b.WriteString("- **Governed Familiar MemoryVault (E4, 500 episodes):** Overlap-Weighted Hybrid RRF (`k=60`) + Spherical Quarantine hits **`100%` Top-1 exact-target recall** with **`0%` Top-3 poison contamination** (vs `7.6%` dense-only and `100%` lexical poison).\n")
+	b.WriteString("- **External Cross-Reference (E5):** Fixed-Point L1 Geometric Median (`GeometricMedianFixed`, 50% breakdown point) hits **`0.9299` ROC-AUC** under 35% coordinated poison vs `0.8640` arithmetic centroid; raw 3rd-order jerk (`n=3`) rejected (`2.5%` runaway TPR vs `99%` `HampelCusum`).\n\n")
+	b.WriteString("[Inspect Live Demo](/r/arobi/assurance:demo) · [Inspect Familiar](/r/arobi/assurance:familiar) · [Back to Hub](/r/arobi/assurance)\n")
+	return b.String()
+}
+
+func renderFamiliar() string {
+	fam := ensureDemoFamiliar()
+	cp := fam.Agent.Checkpoint()
+	var b strings.Builder
+	b.WriteString("# Immaculate Familiar & Poison-Resistant MemoryVault (`" + fam.ID + "`)\n\n")
+	b.WriteString("Call `RunFamiliarDemoMemory(note, xFixed, yFixed)` to test spherical poisoning quarantine (e.g., `-950000, 300000` is quarantined) ")
+	b.WriteString("and `RunFamiliarDemoAction(action, target, queryText, budgetUgnot)` to execute a Hybrid RRF memory-grounded, capability-leased action.\n\n")
+	b.WriteString("- **Active Trusted Memories:** `" + strconv.Itoa(fam.Memory.ActiveCount()) + "` | **Quarantined Injections:** `" + strconv.Itoa(fam.Memory.QuarantinedCount()) + "`\n")
+	b.WriteString("- **Memory Vault Root:** `" + sdk.Hex(fam.Memory.RootHash()) + "`\n")
+	b.WriteString("- **Capability Token Digest:** `" + sdk.Hex(fam.Capability.Digest()) + "` (Max Spend `" + strconv.FormatInt(fam.Capability.MaxSpendUgnot, 10) + "ugnot`)\n")
+	b.WriteString("- **Wilson 95% Trust Lower Bound:** `" + strconv.FormatInt(fam.Trust.LowerBoundFixed(), 10) + "` / `1000000` (`" +
+		strconv.FormatUint(fam.Trust.Successes, 10) + "` successes, `" + strconv.FormatUint(fam.Trust.Violations, 10) + "` violations)\n")
+	b.WriteString("- **Evidence Accumulator Root:** `" + sdk.Hex(cp.CheckpointRoot) + "` (`" + strconv.FormatUint(cp.LeafCount, 10) + "` leaves)\n")
+	if demoFamiliarLastOut != "" {
+		b.WriteString("- **Last Action Output:** `" + demoFamiliarLastOut + "`\n")
+	}
+	if demoFamiliarLastErr != "" {
+		b.WriteString("- **Last Refusal:** `" + demoFamiliarLastErr + "`\n")
+	}
+	b.WriteString("\n[Back to Hub](/r/arobi/assurance)\n")
 	return b.String()
 }
