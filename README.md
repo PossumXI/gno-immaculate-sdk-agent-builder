@@ -112,35 +112,42 @@ node experiments/run_experiments.mjs
 import { GnoshAssuranceSession } from './adapters/gnosh-adapter.mjs';
 import { UllumiiAssuranceBridge } from './adapters/ullumii-adapter.mjs';
 
-// 1. Govern a gnosh.ai (`gnosh -p`) NDJSON frame stream and build an on-chain AnchorCheckpoint tx
+// 1. Govern a gnosh.ai (`gnosh -p --output-format stream-json`) NDJSON stream and build an AnchorCheckpoint tx
 const gnosh = new GnoshAssuranceSession({
   agentId: 'gnosh-ops-agent',
-  owner: 'g1youraddress...',
-  allowedTools: ['rebalance', 'query_balance'],
-  maxBudgetUgnot: 5000,
+  principal: 'g1youraddress...',
+  caller: 'g1youraddress...',
+  sessionId: 'gnosh-session-1',
 });
-gnosh.ingestNdjsonLine(JSON.stringify({
-  type: 'tool_call',
-  call_id: 'call-1',
+gnosh.ingestNdjsonStream(JSON.stringify({
+  type: 'tool_result',
+  frame_id: 'frame-1',
   tool: 'rebalance',
   target: 'pool:gnot-usdc',
-  spend_ugnot: 1000,
+  budget_ugnot: 1000,
+  spent_ugnot: 1000,
+  output: 'ok',
 }));
-const anchorTx = gnosh.buildAnchorCheckpointTx({
-  realmPath: 'gno.land/r/arobi/assurance',
-  anchorFeeUgnot: 1000,
-});
+const anchorTx = gnosh.buildAnchorCheckpointTx(1000);
 
-// 2. Wrap an Ullumii multi-agent action turn and optionally export a cross-harness Whisper handoff
+// 2. Wrap an Ullumii governed MCP action and export a Whisper cross-harness handoff packet
 const ullumii = new UllumiiAssuranceBridge({
   agentId: 'ullumii-coordinator',
-  owner: 'g1youraddress...',
-  allowedTools: ['delegate_task'],
+  workspaceId: 'ws-alpha',
+  principal: 'g1youraddress...',
+  caller: 'g1youraddress...',
 });
-const { receipt } = ullumii.recordTurn({
-  tool: 'delegate_task',
-  target: 'worker:gnosh-shell',
-  spendUgnot: 500,
+const bundle = ullumii.recordUllumiiAction({
+  handoffId: 'handoff-1',
+  mcpServer: 'immaculate-mcp',
+  toolName: 'delegate_task',
+  budgetUgnot: 500,
+  spentUgnot: 500,
+});
+const handoffPacket = ullumii.exportWhisperHandoff({
+  toHarness: 'gnosh.ai',
+  toAgentId: 'gnosh-ops-agent',
+  taskPayload: { action: 'rebalance', target: 'pool:gnot-usdc' },
 });
 ```
 
