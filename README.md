@@ -109,8 +109,8 @@ The live Onyx package and realm paths used a deployer-address namespace (`gno.la
 | `gno.land/p/arobi/signals` | Pure integer (`Scale = 1,000,000`) deterministic signal assurance primitives: `RobustSmoother` (Hampel+EMA), `CausalMedian`, `CusumDetector`, `PageHinkleyDetector`, `HampelCusumDetector`, `MeanResultantLengthFixed`, `MeanPairwiseCosineFixed`, `GeometricMedianFixed` (L1 50%-breakdown), `CoherenceGate`, `SignalEvidence`. |
 | `gno.land/p/arobi/assurance` | Core Agent & Familiar SDK (`NewAgentBuilder`, `BuildFamiliar`): fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), `MemoryVault` (Spherical Quarantine + Overlap-Weighted Hybrid RRF `k=60`), `Familiar` + `CapabilityToken` + `WilsonLowerBoundFixed`, single-use `EffectWarrant`, `DelegatedWarrant`, `HarnessFrame`, RFC 6962 `Accumulator`. |
 | `gno.land/r/arobi/assurance` | Stateful Gno.land realm: `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, GNOT anchor fees & 30-day Pro Agent `SubscribeAgent` plan with private opaque operator settlement, `RunDemoAction` / `RunAdaptiveDemoAction` / `RunFamiliarDemoMemory` / `RunFamiliarDemoAction`, and `gnoweb` UI. |
-| `mcp/` | Zero-dependency **Model Context Protocol (MCP) JSON-RPC 2.0 stdio server** (`immaculate-mcp-server.mjs`) exposing 6 governed tools for Claude, Antigravity, `Ullumii`, `gnosh.ai`, and `gnomcp` clients. |
-| `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs`), **`Ullumii`** (`ullumii-adapter.mjs`), and **Sovereign Local GPU LLMs** (`local-llm-adapter.mjs`, live-tested on `Inkling-2-Mini-Uncensored`). |
+| `mcp/` | Zero-dependency **Model Context Protocol (MCP) JSON-RPC 2.0 stdio server** (`immaculate-mcp-server.mjs`) exposing 9 governed tools (`governed_execute`, `familiar_remember`, `familiar_recall`, `verify_evidence_bundle`, `build_anchor_tx`, `export_whisper_handoff`, `estimate_context_budget`, `inspect_skill_preflight`, `gnosh_peers_plan`) + `--print-gnosh-mcp` one-liner for Claude, Antigravity, `Ullumii`, `gnosh.ai`, and `gnomcp` clients. |
+| `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs` — native `stream-json` `init`/`tool_use`/`tool_result`/`compact_boundary`/`permission_denials` ingestion, pre-send context budgeting, monotone skill preflight, and `gnomem/v2` `.Parallel()` peers plan generator), **`Ullumii`** (`ullumii-adapter.mjs`), and **Sovereign Local GPU LLMs** (`local-llm-adapter.mjs`, live-tested on `Inkling-2-Mini-Uncensored`). |
 | `web/index.html` | Interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, and live `onyx-1` RPC explorer. |
 | `examples/` | Runnable, GnoVM-tested end-to-end examples: DeFi Treasury Rebalancer (`BuildDeFiTreasuryAgent`) and Multi-Agent Attenuated Delegation (`BuildCoordinatorAndWorker`). |
 | `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`). |
@@ -171,6 +171,14 @@ node experiments/run_live_benchmarks.mjs
 ---
 
 ## Using with `gnosh.ai` and `Ullumii`
+
+Connect Immaculate Agent SDK directly into `gnosh.ai` as a native stdio MCP server (9 tools including pre-send context budgeting, monotone skill preflight, and `gnomem/v2` `.Parallel()` peer plan generation):
+
+```bash
+node mcp/immaculate-mcp-server.mjs --print-gnosh-mcp
+```
+
+Or consume real `gnosh -p --output-format stream-json --verbose` output programmatically:
 
 ```js
 import { GnoshAssuranceSession } from './adapters/gnosh-adapter.mjs';

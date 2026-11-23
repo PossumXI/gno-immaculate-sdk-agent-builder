@@ -11,14 +11,33 @@
 
 import readline from 'node:readline';
 import crypto from 'node:crypto';
-import { GnoshAssuranceSession } from '../adapters/gnosh-adapter.mjs';
+import { fileURLToPath } from 'node:url';
+import {
+  GnoshAssuranceSession,
+  estimateGnoshContextBudget,
+  inspectSkillPreflight,
+  buildGnoshPeersPlanGno,
+} from '../adapters/gnosh-adapter.mjs';
 import { UllumiiAssuranceBridge } from '../adapters/ullumii-adapter.mjs';
 import { verifyEvidenceBundle, sha256Hex } from '../verifier/verify-evidence.mjs';
 
 const SERVER_INFO = {
   name: 'immaculate-sdk-agent-mcp',
-  version: '1.0.0',
+  version: '1.1.0',
 };
+
+if (process.argv.includes('--print-gnosh-mcp')) {
+  const scriptPath = fileURLToPath(import.meta.url);
+  const cfg = {
+    command: 'node',
+    args: [scriptPath],
+    env: {
+      IMMACULATE_AGENT_ID: process.env.IMMACULATE_AGENT_ID || 'gnosh-familiar',
+    },
+  };
+  console.log(`gnosh mcp add-json immaculate-sdk '${JSON.stringify(cfg)}'`);
+  process.exit(0);
+}
 
 const SCALE = 1_000_000;
 const QUARANTINE_COS = 0.55;
@@ -28,17 +47,17 @@ const RRF_K = 60;
 const state = {
   session: new GnoshAssuranceSession({
     agentId: process.env.IMMACULATE_AGENT_ID || 'immaculate-mcp-familiar',
-    principal: process.env.IMMACULATE_PRINCIPAL || 'g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t',
-    caller: process.env.IMMACULATE_CALLER || 'g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t',
+    principal: process.env.IMMACULATE_PRINCIPAL || 'g1principal000000000000000000000000000000',
+    caller: process.env.IMMACULATE_CALLER || 'g1operator0000000000000000000000000000000',
     sessionId: process.env.IMMACULATE_SESSION_ID || 'mcp-session-1',
-    realm: process.env.IMMACULATE_REALM || 'gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance',
+    realm: process.env.IMMACULATE_REALM || 'gno.land/r/arobi/assurance',
   }),
   bridge: new UllumiiAssuranceBridge({
     agentId: process.env.IMMACULATE_AGENT_ID || 'immaculate-mcp-familiar',
     workspaceId: process.env.IMMACULATE_SESSION_ID || 'mcp-session-1',
-    principal: process.env.IMMACULATE_PRINCIPAL || 'g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t',
-    caller: process.env.IMMACULATE_CALLER || 'g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t',
-    realm: process.env.IMMACULATE_REALM || 'gno.land/r/g1jdc6h96he7wf7xfycu6u7wqhv5j762qtxu5k5t/assurance',
+    principal: process.env.IMMACULATE_PRINCIPAL || 'g1principal000000000000000000000000000000',
+    caller: process.env.IMMACULATE_CALLER || 'g1operator0000000000000000000000000000000',
+    realm: process.env.IMMACULATE_REALM || 'gno.land/r/arobi/assurance',
   }),
   allowedActions: new Set(['summarize', 'rebalance', 'query_balance', 'delegate_task', 'recall_brief']),
   maxBudgetUgnot: Number(process.env.IMMACULATE_MAX_BUDGET_UGNOT || 5000),
@@ -142,6 +161,50 @@ const TOOLS = [
         toAgentId: { type: 'string' },
         taskPayload: { type: 'object' },
         correlationId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'estimate_context_budget',
+    description: 'Estimate pre-send draft token usage (prose, JSON, @file attachments, images) and warn before crossing gnosh/Ullumii compaction or context window thresholds.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        usedTokens: { type: 'number' },
+        windowTokens: { type: 'number' },
+        compactPointTokens: { type: 'number' },
+        draftText: { type: 'string' },
+        attachments: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  },
+  {
+    name: 'inspect_skill_preflight',
+    description: 'Run fail-closed monotone static security preflight on an untrusted skill or MCP prompt before loading it into gnosh.ai or Ullumii.',
+    inputSchema: {
+      type: 'object',
+      required: ['body'],
+      properties: {
+        name: { type: 'string' },
+        source: { type: 'string' },
+        body: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'gnosh_peers_plan',
+    description: 'Emit valid gnomem/v2 Gno plan code honoring gnosh peers.md (.Parallel() on parent group only, ordered final verification step) bound to the session RFC 6962 Merkle root.',
+    inputSchema: {
+      type: 'object',
+      required: ['parallelSteps'],
+      properties: {
+        rootName: { type: 'string' },
+        rootTitle: { type: 'string' },
+        parallelGroupName: { type: 'string' },
+        parallelGroupTitle: { type: 'string' },
+        parallelSteps: { type: 'array', items: { type: 'object' } },
+        finalCheckName: { type: 'string' },
+        finalCheckTitle: { type: 'string' },
       },
     },
   },
@@ -284,6 +347,22 @@ function handleToolCall(name, args = {}) {
         payloadDigestHex: sha256Hex(JSON.stringify(args.taskPayload || {})),
         payload: args.taskPayload || {},
       };
+    }
+
+    case 'estimate_context_budget': {
+      return estimateGnoshContextBudget(args);
+    }
+
+    case 'inspect_skill_preflight': {
+      return inspectSkillPreflight(args);
+    }
+
+    case 'gnosh_peers_plan': {
+      const latest = state.session.bundles[state.session.bundles.length - 1] || null;
+      return buildGnoshPeersPlanGno({
+        ...args,
+        warrantRootHex: latest ? latest.accumulatorRoot : '',
+      });
     }
 
     default:
