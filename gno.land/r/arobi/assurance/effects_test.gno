@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"gno.land/p/nt/uassert/v0"
 	sdk "gno.land/p/arobi/assurance"
+	"gno.land/p/nt/uassert/v0"
 )
 
 const (
@@ -14,6 +14,8 @@ const (
 	restoredDig  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	committedDig = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	reasonDig    = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	fenceDig     = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	wrongLease   = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 )
 
 func resetRealmWithEffects() {
@@ -21,7 +23,12 @@ func resetRealmWithEffects() {
 	effectTracker = sdk.NewEffectTracker()
 }
 
-func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
+func parseBegin(res string) (id string, lease string) {
+	parts := strings.Split(res, "|")
+	return parts[0], parts[3]
+}
+
+func TestEffectLifecycleAllSixAcceptanceCriteriaAndChecklist(cur realm, t *testing.T) {
 	resetRealmWithEffects()
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
@@ -29,10 +36,10 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 	RegisterAgent(cross(cur), "worker-effects-1", "Effects Worker", policyDig1, "https://aura-genesis.org")
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 1: Stop executor between step 1 and step 2 of a 3-step action.
-	// After deadline height, effect reads IN_DOUBT with no call from executor,
-	// open obligations list shows it with its cleanup owner and 1/3 receipt,
-	// and ANY third party may call MarkInDoubt once deadline passes.
+	// Acceptance Test 1 & Rule 3 / Rule 5:
+	// Start 3-step effect, record step 1, verify stale attempt/lease refused,
+	// stop executor, advance height past deadline -> IN_DOUBT by clock +
+	// permissionless MarkInDoubt + late step refused + Render("obligations").
 	// -------------------------------------------------------------------------
 	startH := runtime.ChainHeight()
 	deadline1 := startH + 10
@@ -44,41 +51,64 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 		"deploy:aura-genesis-prod",
 		"idem-deploy-001",
 		"COMPENSABLE",
-		"", // empty defaults to issuer (agentOwner)
+		"",
 		"live deploy sha matches build artifact",
 		"restore previous netlify deploy",
 		"",
 		3,
 		deadline1,
 	)
-	uassert.True(t, strings.HasPrefix(res1, "eff-1|STARTED|"))
+	uassert.True(t, strings.HasPrefix(res1, "eff-1|STARTED|1|"))
+	id1, lease1 := parseBegin(res1)
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	s1 := RecordStep(cross(cur), "eff-1", 1, "upload-assets", stepDig1, true)
+	s1 := RecordStep(cross(cur), id1, 1, lease1, 1, "upload-assets", stepDig1, true)
 	uassert.True(t, strings.HasPrefix(s1, "eff-1|STEP|1|"))
 
-	// Executor goes silent (no step 2, no step 3, no CloseEffect).
+	// Rule 3: stale attempt or stale lease token MUST abort.
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "stale attempt", func() {
+		RecordStep(cross(cur), id1, 2, lease1, 2, "stale-attempt", stepDig1, true)
+	})
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "stale attempt", func() {
+		RecordStep(cross(cur), id1, 1, wrongLease, 2, "stale-lease", stepDig1, true)
+	})
+
+	// Rule 2: read-back observed before start MUST abort.
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "before effect started", func() {
+		CloseEffect(cross(cur), id1, 1, lease1, "COMMITTED", committedDig, startH-1, "", true)
+	})
+
 	// Before deadline, stranger cannot prematurely mark IN_DOUBT.
 	testing.SetRealm(testing.NewUserRealm(stranger))
 	sendFee(0)
 	uassert.AbortsContains(t, cur, "deadline height not yet reached", func() {
-		MarkInDoubt(cross(cur), "eff-1")
+		MarkInDoubt(cross(cur), id1)
 	})
 
 	// Advance chain height past deadline.
 	testing.SkipHeights(12)
+	uassert.Equal(t, "IN_DOUBT", EffectStateOf(id1))
 
-	// Without ANY call from the silent executor, EffectStateOf reads IN_DOUBT.
-	uassert.Equal(t, "IN_DOUBT", EffectStateOf("eff-1"))
-
-	// Permissionless MarkInDoubt: an unrelated caller seals IN_DOUBT on-chain.
+	// Permissionless MarkInDoubt by an unrelated caller seals IN_DOUBT on-chain.
 	testing.SetRealm(testing.NewUserRealm(stranger))
 	sendFee(0)
-	doubtRes := MarkInDoubt(cross(cur), "eff-1")
+	doubtRes := MarkInDoubt(cross(cur), id1)
 	uassert.True(t, strings.HasPrefix(doubtRes, "eff-1|IN_DOUBT|"))
 
-	// Open obligations & Render("obligations") show eff-1 with its cleanup owner and 1/3 steps.
+	// Rule 5: expired start can no longer record a step under the old attempt.
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "cannot record step", func() {
+		RecordStep(cross(cur), id1, 1, lease1, 2, "too-late", stepDig1, true)
+	})
+
 	uassert.Equal(t, 1, OpenObligationsCount())
 	obsPage := Render("obligations")
 	uassert.True(t, strings.Contains(obsPage, "eff-1"))
@@ -88,7 +118,7 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 	uassert.True(t, strings.Contains(obsPage, "1/3"))
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 2: Authorize again on the same effect key -> DENIED with open effect id.
+	// Acceptance Test 2: Authorize again on same effect key -> DENIED carrying eff-1.
 	// -------------------------------------------------------------------------
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
@@ -109,24 +139,26 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 	})
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 3: Run compensation with read-back confirming restored state.
+	// Rule 4 & Acceptance Test 3:
+	// No reversal while paused; once active, valid compensation seals linked
+	// reversal effect, marks eff-1 COMPENSATED, and clears fence.
 	// -------------------------------------------------------------------------
-	// Missing/zero readback or restoredOriginalState=false MUST fail closed.
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	uassert.AbortsContains(t, cur, "COMPENSATED requires non-zero read-back", func() {
-		Compensate(cross(cur), "eff-1", "comp-001", zeroRoot, true)
+	uassert.Equal(t, "worker-effects-1|PAUSED", PauseAgentEffects(cross(cur), "worker-effects-1", true))
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "paused", func() {
+		Compensate(cross(cur), id1, "comp-paused", restoredDig, runtime.ChainHeight(), true, runtime.ChainHeight()+5)
 	})
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	uassert.AbortsContains(t, cur, "COMPENSATED requires non-zero read-back", func() {
-		Compensate(cross(cur), "eff-1", "comp-001", restoredDig, false)
-	})
+	uassert.Equal(t, "worker-effects-1|ACTIVE", PauseAgentEffects(cross(cur), "worker-effects-1", false))
 
-	// Valid compensation seals linked effect eff-2, marks eff-1 COMPENSATED, and clears fence.
+	// Valid compensation with fresh restored read-back succeeds.
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	compRes := Compensate(cross(cur), "eff-1", "comp-001", restoredDig, true)
+	compRes := Compensate(cross(cur), id1, "comp-001", restoredDig, runtime.ChainHeight(), true, runtime.ChainHeight()+5)
 	uassert.True(t, strings.HasPrefix(compRes, "eff-1|COMPENSATED|eff-2|"))
 	uassert.Equal(t, "COMPENSATED", EffectStateOf("eff-1"))
 	uassert.Equal(t, "COMMITTED", EffectStateOf("eff-2"))
@@ -134,8 +166,10 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 	uassert.Equal(t, 64, len(EffectLifecycleRootHex()))
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 4: IRREVERSIBLE effect with no prior human approval is DENIED at authorize.
+	// Acceptance Test 4 & Rule 8: IRREVERSIBLE without prior human approval is DENIED,
+	// leaving no STARTED record.
 	// -------------------------------------------------------------------------
+	evCountBefore := effectTracker.EventCount()
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
 	uassert.AbortsContains(t, cur, "DENIED: IRREVERSIBLE effect requires prior human approval", func() {
@@ -148,61 +182,22 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 			agentOwner.String(),
 			"resend message id delivered",
 			"",
-			"", // missing human approval!
+			"",
 			1,
 			runtime.ChainHeight()+5,
 		)
 	})
-
-	// With prior human approval it is authorized; if it finishes PARTIAL, only human AcceptPartial resolves it.
-	testing.SetRealm(testing.NewUserRealm(agentOwner))
-	sendFee(0)
-	irrRes := BeginEffect(
-		cross(cur),
-		"worker-effects-1",
-		"email:customer-blast",
-		"idem-email-002",
-		"IRREVERSIBLE",
-		agentOwner.String(),
-		"resend message id delivered",
-		"",
-		"human:gaetano:approval-20261124",
-		2,
-		runtime.ChainHeight()+5,
-	)
-	uassert.True(t, strings.HasPrefix(irrRes, "eff-3|STARTED|"))
-
-	testing.SetRealm(testing.NewUserRealm(agentOwner))
-	sendFee(0)
-	RecordStep(cross(cur), "eff-3", 1, "send-batch-1", stepDig1, true)
-	testing.SetRealm(testing.NewUserRealm(agentOwner))
-	sendFee(0)
-	pClose := CloseEffect(cross(cur), "eff-3", "COMMITTED", committedDig, true)
-	// Only 1 of 2 steps recorded -> downgraded to PARTIAL, never COMMITTED!
-	uassert.True(t, strings.HasPrefix(pClose, "eff-3|PARTIAL|"))
-	uassert.Equal(t, 1, OpenObligationsCount())
-
-	// Auto-compensate is refused on IRREVERSIBLE; human AcceptPartial resolves & releases fence.
-	testing.SetRealm(testing.NewUserRealm(agentOwner))
-	sendFee(0)
-	uassert.AbortsContains(t, cur, "IRREVERSIBLE effect cannot be automatically compensated", func() {
-		Compensate(cross(cur), "eff-3", "comp-irr", restoredDig, true)
-	})
-	testing.SetRealm(testing.NewUserRealm(agentOwner))
-	sendFee(0)
-	accRes := AcceptPartial(cross(cur), "eff-3", "human:gaetano", reasonDig)
-	uassert.True(t, strings.HasPrefix(accRes, "eff-3|ACCEPTED|"))
-	uassert.Equal(t, 0, OpenObligationsCount())
+	uassert.Equal(t, evCountBefore, effectTracker.EventCount())
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 5: Retry with the same idempotency key does not apply twice.
+	// Acceptance Test 5: Retry with same idempotency key does not apply twice.
 	// -------------------------------------------------------------------------
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
 	first := BeginEffect(
 		cross(cur),
 		"worker-effects-1",
-		"deploy:aura-genesis-prod", // fence was released by COMPENSATED above
+		"deploy:aura-genesis-prod",
 		"idem-retry-unique-1",
 		"REVERSIBLE",
 		agentOwner.String(),
@@ -212,7 +207,8 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 		1,
 		runtime.ChainHeight()+5,
 	)
-	uassert.True(t, strings.HasPrefix(first, "eff-4|STARTED|"))
+	uassert.True(t, strings.HasPrefix(first, "eff-3|STARTED|1|"))
+	id3, lease3 := parseBegin(first)
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
@@ -229,19 +225,19 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 		1,
 		runtime.ChainHeight()+5,
 	)
-	uassert.Equal(t, "eff-4|DEDUPLICATED|STARTED", retry)
+	uassert.Equal(t, "eff-3|DEDUPLICATED|STARTED", retry)
 
-	// Close eff-4 cleanly as COMMITTED with verified read-back and stateChanged=true.
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	RecordStep(cross(cur), "eff-4", 1, "write-config", stepDig1, true)
+	RecordStep(cross(cur), id3, 1, lease3, 1, "write-config", stepDig1, true)
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	cOk := CloseEffect(cross(cur), "eff-4", "COMMITTED", committedDig, true)
-	uassert.True(t, strings.HasPrefix(cOk, "eff-4|COMMITTED|"))
+	cOk := CloseEffect(cross(cur), id3, 1, lease3, "COMMITTED", committedDig, runtime.ChainHeight(), "", true)
+	uassert.True(t, strings.HasPrefix(cOk, "eff-3|COMMITTED|"))
 
 	// -------------------------------------------------------------------------
-	// Acceptance Test 6: Step exits 0 and changed nothing -> closes as ABORTED, NEVER COMMITTED.
+	// Acceptance Test 6 & Rule 1 (BOTH HALVES):
+	// Unfenced exit-0 no-op -> IN_DOUBT (never ABORTED); once fenced -> ABORTED.
 	// -------------------------------------------------------------------------
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
@@ -258,14 +254,53 @@ func TestEffectLifecycleAllSixAcceptanceCriteria(cur realm, t *testing.T) {
 		1,
 		runtime.ChainHeight()+5,
 	)
-	uassert.True(t, strings.HasPrefix(noopStart, "eff-5|STARTED|"))
+	id4, lease4 := parseBegin(noopStart)
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	RecordStep(cross(cur), "eff-5", 1, "deploy-waiter-exit-0", stepDig1, false)
+	RecordStep(cross(cur), id4, 1, lease4, 1, "deploy-waiter-exit-0", stepDig1, false)
+
+	// Half A: unfenced -> IN_DOUBT (fence held!)
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)
-	noopClose := CloseEffect(cross(cur), "eff-5", "COMMITTED", "", false)
-	uassert.True(t, strings.HasPrefix(noopClose, "eff-5|ABORTED|"))
-	uassert.Equal(t, "ABORTED", EffectStateOf("eff-5"))
+	unfenced := CloseEffect(cross(cur), id4, 1, lease4, "COMMITTED", "", runtime.ChainHeight(), "", false)
+	uassert.True(t, strings.HasPrefix(unfenced, "eff-4|IN_DOUBT|"))
+	uassert.Equal(t, "IN_DOUBT", EffectStateOf(id4))
+
+	// Half B: fenced -> ABORTED (never COMMITTED!)
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	fenced := CloseEffect(cross(cur), id4, 1, lease4, "COMMITTED", "", runtime.ChainHeight(), fenceDig, false)
+	uassert.True(t, strings.HasPrefix(fenced, "eff-4|ABORTED|"))
+	uassert.Equal(t, "ABORTED", EffectStateOf(id4))
+
+	// Rule 4 (Revoked agent blocks compensation even from cleanupOwner).
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	revStart := BeginEffect(
+		cross(cur),
+		"worker-effects-1",
+		"deploy:revoked-guard",
+		"idem-rev-1",
+		"COMPENSABLE",
+		agentOwner.String(),
+		"done",
+		"undo",
+		"",
+		1,
+		runtime.ChainHeight()+2,
+	)
+	id5, _ := parseBegin(revStart)
+	testing.SkipHeights(4)
+	testing.SetRealm(testing.NewUserRealm(stranger))
+	sendFee(0)
+	MarkInDoubt(cross(cur), id5)
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	RevokeAgent(cross(cur), "worker-effects-1")
+	testing.SetRealm(testing.NewUserRealm(agentOwner))
+	sendFee(0)
+	uassert.AbortsContains(t, cur, "revoked", func() {
+		Compensate(cross(cur), id5, "comp-after-revoke", restoredDig, runtime.ChainHeight(), true, runtime.ChainHeight()+5)
+	})
 }

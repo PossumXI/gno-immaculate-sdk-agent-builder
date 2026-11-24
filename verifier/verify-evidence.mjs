@@ -507,6 +507,7 @@ export function encodeEffectEvent(e) {
     encStr(e.idempotencyKey),
     encStr(e.kind),
     encStr(e.state),
+    encU64(e.attempt ?? 1),
     encU32(e.stepIndex ?? 0),
     encU32(e.totalSteps ?? 0),
     encStr(e.actor),
@@ -514,6 +515,8 @@ export function encodeEffectEvent(e) {
     encStr(e.reversalClass),
     Buffer.from([e.stateChanged ? 1 : 0]),
     fromDigestHex(e.readbackDigest ?? ZERO_DIGEST_HEX),
+    fromDigestHex(e.fenceDigest ?? ZERO_DIGEST_HEX),
+    encI64(e.observedHeight ?? 0),
     encStr(e.supersedesId ?? ''),
     encStr(e.humanApproval ?? ''),
     encI64(e.deadlineHeight ?? 0),
@@ -526,11 +529,38 @@ export function effectEventLeafHash(e) {
 }
 
 const VALID_REVERSAL_CLASSES = new Set(['REVERSIBLE', 'COMPENSABLE', 'IRREVERSIBLE']);
+const VALID_EFFECT_STATES = new Set([
+  'AUTHORIZED',
+  'STARTED',
+  'COMMITTED',
+  'ABORTED',
+  'PARTIAL',
+  'IN_DOUBT',
+  'COMPENSATED',
+  'ACCEPTED',
+]);
+
+function isPassiveValue(val, depth = 0) {
+  if (depth > 8) return false;
+  if (val === null || val === undefined) return true;
+  const t = typeof val;
+  if (t === 'function' || t === 'symbol') return false;
+  if (t !== 'object') return true;
+  if (Array.isArray(val)) return val.every((x) => isPassiveValue(x, depth + 1));
+  const proto = Object.getPrototypeOf(val);
+  if (proto !== Object.prototype && proto !== null) return false;
+  for (const [k, v] of Object.entries(val)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') return false;
+    if (!isPassiveValue(v, depth + 1)) return false;
+  }
+  return true;
+}
 
 /**
  * Independently verify an entire partial-effect lifecycle hash chain & RFC 6962 accumulator offline.
- * Checks hash-chain links, Merkle root, deadline proofs for IN_DOUBT, human approval for IRREVERSIBLE
- * and ACCEPTED, read-back verification for COMMITTED, and linked reversal proof for COMPENSATED.
+ * Checks passive evidence structure, gap-free hash-chain links, Merkle root, attempt fencing,
+ * read-back observation causal binding, grant-fenced ABORTED, deadline proofs for IN_DOUBT,
+ * human approval for IRREVERSIBLE and ACCEPTED, and linked reversal proofs for COMPENSATED.
  */
 export function verifyEffectLifecycleChain(bundle) {
   const errors = [];
@@ -542,17 +572,22 @@ export function verifyEffectLifecycleChain(bundle) {
 
   const leaves = [];
   const finalStates = {};
+  const effectStarts = new Map();
   const committedCompensations = new Map();
   let prevLeaf = ZERO_DIGEST_HEX;
 
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
+    if (!isPassiveValue(ev)) {
+      errors.push(`event[${i}] is not passive JSON data`);
+      continue;
+    }
     const expectedSeq = i + 1;
     if (Number(ev.seq) !== expectedSeq) {
-      errors.push(`event[${i}] seq expected ${expectedSeq}, got ${ev.seq}`);
+      errors.push(`event[${i}] seq gap/reorder: expected ${expectedSeq}, got ${ev.seq}`);
     }
     if (ev.prevHash !== prevLeaf) {
-      errors.push(`event[${i}] prevHash chain break`);
+      errors.push(`event[${i}] prevHash chain break or fork`);
     }
     if (!ev.effectId || !ev.effectKey || !ev.idempotencyKey) {
       errors.push(`event[${i}] missing effectId, effectKey, or idempotencyKey`);
@@ -563,25 +598,55 @@ export function verifyEffectLifecycleChain(bundle) {
     if (!VALID_REVERSAL_CLASSES.has(ev.reversalClass)) {
       errors.push(`event[${i}] invalid reversalClass: ${String(ev.reversalClass)}`);
     }
+    if (!VALID_EFFECT_STATES.has(ev.state)) {
+      errors.push(`event[${i}] invalid effect state: ${String(ev.state)}`);
+    }
+    if (!Number.isInteger(Number(ev.attempt ?? 1)) || Number(ev.attempt ?? 1) < 1) {
+      errors.push(`event[${i}] invalid attempt number: ${String(ev.attempt)}`);
+    }
 
     const readback = ev.readbackDigest ?? ZERO_DIGEST_HEX;
+    const fence = ev.fenceDigest ?? ZERO_DIGEST_HEX;
+    const observed = BigInt(ev.observedHeight ?? 0);
+    const evHeight = BigInt(ev.height ?? 0);
+    const evAttempt = Number(ev.attempt ?? 1);
+
     if (ev.kind === 'START') {
-      if (BigInt(ev.deadlineHeight ?? 0) <= BigInt(ev.height ?? 0)) {
+      if (BigInt(ev.deadlineHeight ?? 0) <= evHeight) {
         errors.push(`event[${i}] START deadline must be strictly greater than start height/timestamp`);
       }
       if (ev.reversalClass === 'IRREVERSIBLE' && !String(ev.humanApproval || '').trim()) {
         errors.push(`event[${i}] IRREVERSIBLE effect started without humanApproval`);
       }
+      effectStarts.set(ev.effectId, { startHeight: evHeight, attempt: evAttempt });
+    } else if (ev.kind === 'STEP') {
+      const st = effectStarts.get(ev.effectId);
+      if (st && evAttempt !== st.attempt) {
+        errors.push(`event[${i}] STEP attempt ${evAttempt} does not match active attempt ${st.attempt}`);
+      }
     } else if (ev.kind === 'IN_DOUBT') {
-      if (BigInt(ev.height ?? 0) < BigInt(ev.deadlineHeight ?? 0)) {
+      if (evHeight < BigInt(ev.deadlineHeight ?? 0)) {
         errors.push(`event[${i}] IN_DOUBT recorded before deadline`);
       }
-    } else if (ev.kind === 'CLOSE' && ev.state === 'COMMITTED') {
-      if (!ev.stateChanged || readback === ZERO_DIGEST_HEX) {
-        errors.push(`event[${i}] COMMITTED requires stateChanged=true and non-zero readbackDigest`);
+    } else if (ev.kind === 'CLOSE') {
+      const st = effectStarts.get(ev.effectId);
+      if (st && evAttempt !== st.attempt) {
+        errors.push(`event[${i}] CLOSE attempt ${evAttempt} does not match active attempt ${st.attempt}`);
       }
-      if (Number(ev.stepIndex ?? 0) < Number(ev.totalSteps ?? 1)) {
-        errors.push(`event[${i}] COMMITTED requires all declared steps recorded`);
+      if (ev.state === 'COMMITTED') {
+        if (!ev.stateChanged || readback === ZERO_DIGEST_HEX) {
+          errors.push(`event[${i}] COMMITTED requires stateChanged=true and non-zero readbackDigest`);
+        }
+        if (Number(ev.stepIndex ?? 0) < Number(ev.totalSteps ?? 1)) {
+          errors.push(`event[${i}] COMMITTED requires all declared steps recorded`);
+        }
+        if (st && (observed < st.startHeight || observed > evHeight)) {
+          errors.push(`event[${i}] COMMITTED readback observedHeight out of [start, close] bounds`);
+        }
+      } else if (ev.state === 'ABORTED') {
+        if (fence === ZERO_DIGEST_HEX) {
+          errors.push(`event[${i}] ABORTED requires non-zero fenceDigest proving authorization cannot land later`);
+        }
       }
     } else if (ev.kind === 'COMPENSATE' && ev.state === 'COMMITTED') {
       if (!ev.stateChanged || readback === ZERO_DIGEST_HEX || !ev.supersedesId) {

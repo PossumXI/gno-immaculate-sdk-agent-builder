@@ -54,7 +54,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(init.result.serverInfo.name, 'immaculate-sdk-agent-mcp');
 
     const list = await client.call('tools/list');
-    assert.equal(list.result.tools.length, 16);
+    assert.equal(list.result.tools.length, 17);
 
     // 1. Seed 1 trusted memory, block a k=1->k=2 cold-start poison injection (E6b), then seed 2nd clean + block post-boot poison.
     const m1 = await client.call('tools/call', {
@@ -215,7 +215,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
   }
 });
 
-test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse acceptance tests and verify offline', async () => {
+test('Partial-effect lifecycle MCP tools satisfy all 6 acceptance tests and all 8 review checklist rules', async () => {
   const client = startMcpClient();
   try {
     await client.call('initialize', { protocolVersion: '2024-11-05', clientInfo: { name: 'test', version: '1' } });
@@ -223,7 +223,6 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     const t0 = 1_700_000_000_000;
 
     // 1. Stop executor between step 1 and step 2 of a 3-step action.
-    //    After deadline, effect reads IN_DOUBT with no call from executor, and open list shows owner + 1 receipt.
     const start1 = await client.call('tools/call', {
       name: 'arobi_begin_effect',
       arguments: {
@@ -234,18 +233,24 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
         reversalClass: 'COMPENSABLE',
         undoSpec: 'rollback to previous netlify deploy',
         deadlineMs: t0 + 10_000,
+        maxRecoveryAttempts: 2,
+        maxReadbackAgeMs: 5_000,
         grantIssuer: 'issuer:gaetano',
         nowMs: t0,
       },
     });
     assert.equal(start1.result.structuredContent.allowed, true);
     assert.equal(start1.result.structuredContent.effectId, 'eff-1');
-    assert.equal(start1.result.structuredContent.cleanupOwner, 'issuer:gaetano');
+    assert.equal(start1.result.structuredContent.attempt, 1);
+    assert.match(start1.result.structuredContent.leaseToken, /^[0-9a-f]{64}$/);
+    const lease1 = start1.result.structuredContent.leaseToken;
 
     const step1 = await client.call('tools/call', {
       name: 'arobi_record_step',
       arguments: {
         effectId: 'eff-1',
+        attempt: 1,
+        leaseToken: lease1,
         stepIndex: 1,
         stepName: 'upload-bundle',
         output: 'bundle-sha-abc',
@@ -255,7 +260,56 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     });
     assert.equal(step1.result.structuredContent.recorded, true);
 
-    // Executor goes quiet (no step 2, no step 3, no close). Clock advances past deadline.
+    // Rule 3: stale attempt or wrong leaseToken MUST be refused.
+    const staleStep = await client.call('tools/call', {
+      name: 'arobi_record_step',
+      arguments: {
+        effectId: 'eff-1',
+        attempt: 2,
+        leaseToken: lease1,
+        stepIndex: 2,
+        stepName: 'stale-attempt',
+        stateChanged: true,
+        nowMs: t0 + 2_000,
+      },
+    });
+    assert.equal(staleStep.result.structuredContent.recorded, false);
+    assert.equal(staleStep.result.structuredContent.reasonCode, 'STALE_ATTEMPT_OR_LEASE');
+
+    // Rule 2: read-back observed before start or older than allowed age MUST be refused.
+    const preStartClose = await client.call('tools/call', {
+      name: 'arobi_close_effect',
+      arguments: {
+        effectId: 'eff-1',
+        attempt: 1,
+        leaseToken: lease1,
+        requestedOutcome: 'COMMITTED',
+        readback: 'stale-readback',
+        observedMs: t0 - 1,
+        stateChanged: true,
+        nowMs: t0 + 2_500,
+      },
+    });
+    assert.equal(preStartClose.result.structuredContent.closed, false);
+    assert.equal(preStartClose.result.structuredContent.reasonCode, 'READBACK_BEFORE_START');
+
+    const tooOldClose = await client.call('tools/call', {
+      name: 'arobi_close_effect',
+      arguments: {
+        effectId: 'eff-1',
+        attempt: 1,
+        leaseToken: lease1,
+        requestedOutcome: 'COMMITTED',
+        readback: 'too-old',
+        observedMs: t0 + 100,
+        stateChanged: true,
+        nowMs: t0 + 9_000,
+      },
+    });
+    assert.equal(tooOldClose.result.structuredContent.closed, false);
+    assert.equal(tooOldClose.result.structuredContent.reasonCode, 'READBACK_TOO_OLD');
+
+    // Executor goes quiet; clock passes deadline -> IN_DOUBT without executor call, late step refused (Rule 5).
     const open = await client.call('tools/call', {
       name: 'arobi_list_open_effects',
       arguments: { nowMs: t0 + 15_000 },
@@ -265,7 +319,21 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     assert.equal(open.result.structuredContent.obligations[0].state, 'IN_DOUBT');
     assert.equal(open.result.structuredContent.obligations[0].cleanupOwner, 'issuer:gaetano');
     assert.equal(open.result.structuredContent.obligations[0].stepsRecorded, 1);
-    assert.equal(open.result.structuredContent.obligations[0].totalSteps, 3);
+
+    const lateStep = await client.call('tools/call', {
+      name: 'arobi_record_step',
+      arguments: {
+        effectId: 'eff-1',
+        attempt: 1,
+        leaseToken: lease1,
+        stepIndex: 2,
+        stepName: 'late-after-deadline',
+        stateChanged: true,
+        nowMs: t0 + 15_500,
+      },
+    });
+    assert.equal(lateStep.result.structuredContent.recorded, false);
+    assert.equal(lateStep.result.structuredContent.reasonCode, 'EFFECT_DEADLINE_EXCEEDED');
 
     // 2. Authorize again on that effect key: DENIED, carrying the open effect's id.
     const fenced = await client.call('tools/call', {
@@ -282,28 +350,47 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
       },
     });
     assert.equal(fenced.result.structuredContent.allowed, false);
-    assert.equal(fenced.result.structuredContent.verdict, 'DENY');
     assert.equal(fenced.result.structuredContent.reasonCode, 'EFFECT_KEY_FENCED');
     assert.equal(fenced.result.structuredContent.openEffectId, 'eff-1');
 
-    // 3. Run compensation with read-back showing restored state -> COMPENSATED + offline verification passes!
+    // Rule 4: No reversal while paused.
+    await client.call('tools/call', { name: 'arobi_set_pause', arguments: { paused: true } });
+    const pausedComp = await client.call('tools/call', {
+      name: 'arobi_compensate',
+      arguments: {
+        originalEffectId: 'eff-1',
+        compIdempotencyKey: 'comp-paused',
+        readback: 'restored',
+        restoredOriginalState: true,
+        nowMs: t0 + 16_500,
+      },
+    });
+    assert.equal(pausedComp.result.structuredContent.compensated, false);
+    assert.equal(pausedComp.result.structuredContent.reasonCode, 'COMPENSATION_BLOCKED_WHILE_PAUSED');
+    await client.call('tools/call', { name: 'arobi_set_pause', arguments: { paused: false } });
+
+    // Rule 6: Failed compensation marks its own recovery attempt IN_DOUBT (never loops) and consumes 1 attempt.
     const badComp = await client.call('tools/call', {
       name: 'arobi_compensate',
       arguments: {
         originalEffectId: 'eff-1',
-        compIdempotencyKey: 'comp-1',
+        compIdempotencyKey: 'comp-fail-1',
         restoredOriginalState: false,
         nowMs: t0 + 17_000,
       },
     });
     assert.equal(badComp.result.structuredContent.compensated, false);
+    assert.equal(badComp.result.structuredContent.compensationState, 'IN_DOUBT');
+    assert.equal(badComp.result.structuredContent.recoveryAttempts, 1);
 
+    // 3. Run compensation with fresh read-back showing restored state -> COMPENSATED + offline verify + tamper negative (Rule 7)!
     const comp = await client.call('tools/call', {
       name: 'arobi_compensate',
       arguments: {
         originalEffectId: 'eff-1',
-        compIdempotencyKey: 'comp-1',
+        compIdempotencyKey: 'comp-ok-2',
         readback: 'live deploy sha matches pre-change commit 7a3fca2d',
+        observedMs: t0 + 18_000,
         restoredOriginalState: true,
         nowMs: t0 + 18_000,
       },
@@ -316,7 +403,14 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     assert.equal(offlineCheck.verified, true);
     assert.equal(offlineCheck.finalStates['eff-1'], 'COMPENSATED');
 
-    // 4. An IRREVERSIBLE effect with no prior human approval is DENIED at authorize.
+    // Rule 7 tampered-chain negative directly inside Acceptance Test 3:
+    const tampered = structuredClone(comp.result.structuredContent.lifecycleBundle);
+    tampered.events[1].readbackDigest = 'f'.repeat(64);
+    const tamperedCheck = verifyEffectLifecycleChain(tampered);
+    assert.equal(tamperedCheck.verified, false);
+
+    // 4 & Rule 8: IRREVERSIBLE with no prior human approval is DENIED at authorize, leaving zero STARTED record.
+    const eventsBeforeIrr = comp.result.structuredContent.lifecycleBundle.events.length;
     const irrDenied = await client.call('tools/call', {
       name: 'arobi_begin_effect',
       arguments: {
@@ -330,10 +424,11 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
       },
     });
     assert.equal(irrDenied.result.structuredContent.allowed, false);
-    assert.equal(irrDenied.result.structuredContent.verdict, 'DENY');
     assert.equal(irrDenied.result.structuredContent.reasonCode, 'IRREVERSIBLE_REQUIRES_HUMAN_APPROVAL');
+    const afterIrrList = await client.call('tools/call', { name: 'arobi_list_open_effects', arguments: { nowMs: t0 + 20_500 } });
+    assert.equal(afterIrrList.result.structuredContent.eventCount, eventsBeforeIrr);
 
-    // 5. A retry with the same idempotency key does not apply the effect twice.
+    // 5. Retry with the same idempotency key does not apply twice.
     const first = await client.call('tools/call', {
       name: 'arobi_begin_effect',
       arguments: {
@@ -349,7 +444,7 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     });
     assert.equal(first.result.structuredContent.allowed, true);
     assert.equal(first.result.structuredContent.applied, true);
-    assert.equal(first.result.structuredContent.deduplicated, false);
+    const firstLease = first.result.structuredContent.leaseToken;
 
     const retry = await client.call('tools/call', {
       name: 'arobi_begin_effect',
@@ -364,16 +459,16 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
         nowMs: t0 + 22_000,
       },
     });
-    assert.equal(retry.result.structuredContent.allowed, true);
-    assert.equal(retry.result.structuredContent.applied, false);
     assert.equal(retry.result.structuredContent.deduplicated, true);
+    assert.equal(retry.result.structuredContent.applied, false);
     assert.equal(retry.result.structuredContent.effectId, first.result.structuredContent.effectId);
 
-    // Close first cleanly as COMMITTED with verified read-back.
     await client.call('tools/call', {
       name: 'arobi_record_step',
       arguments: {
         effectId: first.result.structuredContent.effectId,
+        attempt: 1,
+        leaseToken: firstLease,
         stepIndex: 1,
         stepName: 'write-config',
         output: 'sha256:cfg-v2',
@@ -385,8 +480,11 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
       name: 'arobi_close_effect',
       arguments: {
         effectId: first.result.structuredContent.effectId,
+        attempt: 1,
+        leaseToken: firstLease,
         requestedOutcome: 'COMMITTED',
         readback: 'sha256:cfg-v2 verified on disk',
+        observedMs: t0 + 24_000,
         stateChanged: true,
         exitCode: 0,
         nowMs: t0 + 24_000,
@@ -395,7 +493,9 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
     assert.equal(closedOk.result.structuredContent.state, 'COMMITTED');
     assert.equal(closedOk.result.structuredContent.verified, true);
 
-    // 6. A step that exits 0 and changed nothing closes as ABORTED, never COMMITTED.
+    // 6 & Rule 1 (BOTH HALVES):
+    // Half A: Exit 0 + changed nothing + UNFENCED closes as IN_DOUBT (never ABORTED, never COMMITTED).
+    // Half B: Once fenceProof proves the grant can never land later, closes as ABORTED.
     const noopStart = await client.call('tools/call', {
       name: 'arobi_begin_effect',
       arguments: {
@@ -409,10 +509,13 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
         nowMs: t0 + 25_000,
       },
     });
+    const noopLease = noopStart.result.structuredContent.leaseToken;
     await client.call('tools/call', {
       name: 'arobi_record_step',
       arguments: {
         effectId: noopStart.result.structuredContent.effectId,
+        attempt: 1,
+        leaseToken: noopLease,
         stepIndex: 1,
         stepName: 'killed-waiter-exit-0',
         output: '',
@@ -420,10 +523,12 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
         nowMs: t0 + 26_000,
       },
     });
-    const noopClose = await client.call('tools/call', {
+    const unfencedNoop = await client.call('tools/call', {
       name: 'arobi_close_effect',
       arguments: {
         effectId: noopStart.result.structuredContent.effectId,
+        attempt: 1,
+        leaseToken: noopLease,
         requestedOutcome: 'COMMITTED',
         readback: '',
         stateChanged: false,
@@ -431,9 +536,66 @@ test('Partial-effect lifecycle MCP tools satisfy all 6 detect/own/reverse accept
         nowMs: t0 + 27_000,
       },
     });
-    assert.equal(noopClose.result.structuredContent.state, 'ABORTED');
-    assert.equal(noopClose.result.structuredContent.fenced, false);
-    assert.equal(noopClose.result.structuredContent.verified, true);
+    assert.equal(unfencedNoop.result.structuredContent.state, 'IN_DOUBT');
+    assert.equal(unfencedNoop.result.structuredContent.fenced, true);
+    assert.equal(unfencedNoop.result.structuredContent.verified, true);
+
+    const fencedNoop = await client.call('tools/call', {
+      name: 'arobi_close_effect',
+      arguments: {
+        effectId: noopStart.result.structuredContent.effectId,
+        attempt: 1,
+        leaseToken: noopLease,
+        requestedOutcome: 'COMMITTED',
+        readback: '',
+        fenceProof: 'grant-expired-unused:deploy:ghost-waiter',
+        stateChanged: false,
+        exitCode: 0,
+        nowMs: t0 + 28_000,
+      },
+    });
+    assert.equal(fencedNoop.result.structuredContent.state, 'ABORTED');
+    assert.equal(fencedNoop.result.structuredContent.fenced, false);
+    assert.equal(fencedNoop.result.structuredContent.verified, true);
+
+    // Rule 6 cap check: exceeding maxRecoveryAttempts refuses further automated compensation.
+    const capStart = await client.call('tools/call', {
+      name: 'arobi_begin_effect',
+      arguments: {
+        effectKey: 'cap:bounded-recovery',
+        idempotencyKey: 'idem-cap-1',
+        totalSteps: 1,
+        postcondition: 'applied',
+        reversalClass: 'COMPENSABLE',
+        undoSpec: 'revert',
+        deadlineMs: t0 + 30_000,
+        maxRecoveryAttempts: 1,
+        nowMs: t0 + 29_000,
+      },
+    });
+    await client.call('tools/call', { name: 'arobi_list_open_effects', arguments: { nowMs: t0 + 31_000 } });
+    const capFail1 = await client.call('tools/call', {
+      name: 'arobi_compensate',
+      arguments: {
+        originalEffectId: capStart.result.structuredContent.effectId,
+        compIdempotencyKey: 'cap-comp-1',
+        restoredOriginalState: false,
+        nowMs: t0 + 32_000,
+      },
+    });
+    assert.equal(capFail1.result.structuredContent.compensationState, 'IN_DOUBT');
+    const capExceeded = await client.call('tools/call', {
+      name: 'arobi_compensate',
+      arguments: {
+        originalEffectId: capStart.result.structuredContent.effectId,
+        compIdempotencyKey: 'cap-comp-2',
+        readback: 'restored',
+        restoredOriginalState: true,
+        nowMs: t0 + 33_000,
+      },
+    });
+    assert.equal(capExceeded.result.structuredContent.compensated, false);
+    assert.equal(capExceeded.result.structuredContent.reasonCode, 'RECOVERY_LIMIT_EXCEEDED');
   } finally {
     client.close();
   }

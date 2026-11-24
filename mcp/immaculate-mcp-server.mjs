@@ -82,9 +82,16 @@ const state = {
   effectLeaves: [],
   effectLastHash: ZERO_DIGEST_HEX,
   effectCount: 0,
+  sessionPaused: false,
 };
 
 const VALID_REVERSAL_CLASSES = new Set(['REVERSIBLE', 'COMPENSABLE', 'IRREVERSIBLE']);
+const DEFAULT_MAX_RECOVERY_ATTEMPTS = 3;
+const DEFAULT_MAX_READBACK_AGE_MS = 60_000;
+
+function deriveLeaseToken(effectId, attempt, idempotencyKey) {
+  return sha256Hex(`arobi-lease-v1|${effectId}|${attempt}|${idempotencyKey}`);
+}
 
 function resolveDigest(digestHex, rawPayload) {
   if (typeof digestHex === 'string' && /^[0-9a-f]{64}$/.test(digestHex.trim())) {
@@ -105,6 +112,7 @@ function sealLifecycleEvent(ev) {
     idempotencyKey: ev.idempotencyKey,
     kind: ev.kind,
     state: ev.state,
+    attempt: Number(ev.attempt ?? 1),
     stepIndex: Number(ev.stepIndex ?? 0),
     totalSteps: Number(ev.totalSteps ?? 0),
     actor: String(ev.actor || state.session.caller),
@@ -112,6 +120,8 @@ function sealLifecycleEvent(ev) {
     reversalClass: String(ev.reversalClass),
     stateChanged: Boolean(ev.stateChanged),
     readbackDigest: ev.readbackDigest || ZERO_DIGEST_HEX,
+    fenceDigest: ev.fenceDigest || ZERO_DIGEST_HEX,
+    observedHeight: Number(ev.observedHeight ?? 0),
     supersedesId: String(ev.supersedesId || ''),
     humanApproval: String(ev.humanApproval || ''),
     deadlineHeight: Number(ev.deadlineHeight ?? 0),
@@ -142,6 +152,7 @@ function sweepOverdueEffects(nowMs, actor = 'clock-sweep') {
         idempotencyKey: rec.idempotencyKey,
         kind: 'IN_DOUBT',
         state: 'IN_DOUBT',
+        attempt: rec.attempt,
         stepIndex: rec.steps.length,
         totalSteps: rec.totalSteps,
         actor,
@@ -149,6 +160,8 @@ function sweepOverdueEffects(nowMs, actor = 'clock-sweep') {
         reversalClass: rec.reversalClass,
         stateChanged: false,
         readbackDigest: ZERO_DIGEST_HEX,
+        fenceDigest: ZERO_DIGEST_HEX,
+        observedHeight: 0,
         deadlineHeight: rec.deadlineMs,
         height: now,
       });
@@ -331,7 +344,7 @@ const TOOLS = [
   },
   {
     name: 'arobi_begin_effect',
-    description: 'Seal STARTED for a governed multi-step effect with mandatory deadline, cleanup owner (defaults to grant issuer), postcondition, and reversal class. Denies IRREVERSIBLE without human approval, deduplicates retries by idempotencyKey, and fences open effectKeys.',
+    description: 'Seal STARTED for a governed multi-step effect with mandatory deadline, cleanup owner (defaults to grant issuer), postcondition, reversal class, and attempt/lease token. Denies IRREVERSIBLE without human approval (leaving zero STARTED record), deduplicates retries by idempotencyKey, and fences open effectKeys.',
     inputSchema: {
       type: 'object',
       required: ['effectKey', 'idempotencyKey', 'totalSteps', 'postcondition', 'reversalClass'],
@@ -344,6 +357,8 @@ const TOOLS = [
         undoSpec: { type: 'string' },
         deadlineMs: { type: 'number' },
         deadlineSeconds: { type: 'number' },
+        maxRecoveryAttempts: { type: 'number' },
+        maxReadbackAgeMs: { type: 'number' },
         cleanupOwner: { type: 'string' },
         grantIssuer: { type: 'string' },
         humanApprovalId: { type: 'string' },
@@ -354,12 +369,14 @@ const TOOLS = [
   },
   {
     name: 'arobi_record_step',
-    description: 'Seal one step receipt inside an active STARTED effect.',
+    description: 'Seal one step receipt inside an active STARTED effect, fenced by attempt number and leaseToken.',
     inputSchema: {
       type: 'object',
       required: ['effectId', 'stepIndex', 'stepName'],
       properties: {
         effectId: { type: 'string' },
+        attempt: { type: 'number' },
+        leaseToken: { type: 'string' },
         stepIndex: { type: 'number' },
         stepName: { type: 'string' },
         output: { type: 'string' },
@@ -372,15 +389,20 @@ const TOOLS = [
   },
   {
     name: 'arobi_close_effect',
-    description: 'Close a STARTED or IN_DOUBT effect by verifying downstream read-back evidence instead of trusting exit 0. Exit 0 with no state change or missing read-back closes ABORTED or PARTIAL, never COMMITTED.',
+    description: 'Close a STARTED or IN_DOUBT effect by verifying attempt/lease binding, read-back observation freshness, and sink/grant fence evidence. Unfenced no-effect stays IN_DOUBT (never ABORTED); only once fenceDigest/fenceProof proves the grant cannot land later does no-effect close ABORTED.',
     inputSchema: {
       type: 'object',
       required: ['effectId'],
       properties: {
         effectId: { type: 'string' },
+        attempt: { type: 'number' },
+        leaseToken: { type: 'string' },
         requestedOutcome: { type: 'string', enum: ['COMMITTED', 'ABORTED', 'PARTIAL'] },
         readback: { type: 'string' },
         readbackDigest: { type: 'string' },
+        observedMs: { type: 'number' },
+        fenceProof: { type: 'string' },
+        fenceDigest: { type: 'string' },
         stateChanged: { type: 'boolean' },
         exitCode: { type: 'number' },
         actor: { type: 'string' },
@@ -390,7 +412,7 @@ const TOOLS = [
   },
   {
     name: 'arobi_list_open_effects',
-    description: 'Sweep overdue STARTED effects into IN_DOUBT by clock and list every open IN_DOUBT or PARTIAL obligation with its cleanup owner, age, and recorded step receipts.',
+    description: 'Sweep overdue STARTED effects into IN_DOUBT by clock and list every open IN_DOUBT or PARTIAL obligation with its cleanup owner, attempt, age, recovery budget, and recorded step receipts.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -400,7 +422,7 @@ const TOOLS = [
   },
   {
     name: 'arobi_compensate',
-    description: 'Seal a linked reversal effect for an IN_DOUBT or PARTIAL effect (requiring read-back confirming the restored state) or seal human AcceptPartial approval, releasing the effect-key fence.',
+    description: 'Run a bounded linked reversal effect for an IN_DOUBT or PARTIAL effect (refused while session/grant is paused, capped at maxRecoveryAttempts, requiring fresh read-back confirming the restored state) or seal human AcceptPartial approval.',
     inputSchema: {
       type: 'object',
       required: ['originalEffectId'],
@@ -409,12 +431,25 @@ const TOOLS = [
         compIdempotencyKey: { type: 'string' },
         readback: { type: 'string' },
         readbackDigest: { type: 'string' },
+        observedMs: { type: 'number' },
+        compDeadlineMs: { type: 'number' },
         restoredOriginalState: { type: 'boolean' },
         acceptPartial: { type: 'boolean' },
         humanApprover: { type: 'string' },
         reason: { type: 'string' },
         actor: { type: 'string' },
         nowMs: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'arobi_set_pause',
+    description: 'Pause or resume the local governed effect session; while paused, new starts and automated compensations are refused.',
+    inputSchema: {
+      type: 'object',
+      required: ['paused'],
+      properties: {
+        paused: { type: 'boolean' },
       },
     },
   },
@@ -627,7 +662,20 @@ function handleToolCall(name, args = {}) {
       });
     }
 
+    case 'arobi_set_pause': {
+      state.sessionPaused = Boolean(args.paused);
+      return { paused: state.sessionPaused };
+    }
+
     case 'arobi_begin_effect': {
+      if (state.sessionPaused) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'SESSION_PAUSED',
+          message: 'DENIED: session is paused',
+        };
+      }
       const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
       const effectKey = String(args.effectKey || '').trim();
       const idempotencyKey = String(args.idempotencyKey || '').trim();
@@ -638,6 +686,12 @@ function handleToolCall(name, args = {}) {
       const humanApprovalId = String(args.humanApprovalId || '').trim();
       const cleanupOwner = String(args.cleanupOwner || args.grantIssuer || state.session.caller || '').trim();
       const actor = String(args.actor || state.session.caller);
+      const maxRecoveryAttempts = args.maxRecoveryAttempts !== undefined
+        ? Math.max(1, Math.min(10, Math.trunc(Number(args.maxRecoveryAttempts))))
+        : DEFAULT_MAX_RECOVERY_ATTEMPTS;
+      const maxReadbackAgeMs = args.maxReadbackAgeMs !== undefined
+        ? Math.max(1, Math.trunc(Number(args.maxReadbackAgeMs)))
+        : DEFAULT_MAX_READBACK_AGE_MS;
       const deadlineMs = args.deadlineMs !== undefined
         ? Math.trunc(Number(args.deadlineMs))
         : args.deadlineSeconds !== undefined
@@ -693,7 +747,6 @@ function handleToolCall(name, args = {}) {
         };
       }
 
-      // Idempotency deduplication: retry with the same idempotencyKey does not apply twice.
       if (state.effectsByIdempotency.has(idempotencyKey)) {
         const existingId = state.effectsByIdempotency.get(idempotencyKey);
         const existing = state.effects.get(existingId);
@@ -703,6 +756,8 @@ function handleToolCall(name, args = {}) {
           deduplicated: true,
           applied: false,
           effectId: existing.id,
+          attempt: existing.attempt,
+          leaseToken: existing.leaseToken,
           state: existing.state,
           cleanupOwner: existing.cleanupOwner,
           stepsRecorded: existing.steps.length,
@@ -711,7 +766,6 @@ function handleToolCall(name, args = {}) {
         };
       }
 
-      // Effect-key fencing: deny new authorize while an open effect holds this effectKey.
       if (state.openEffectsByKey.has(effectKey)) {
         const openId = state.openEffectsByKey.get(effectKey);
         const open = state.effects.get(openId);
@@ -728,11 +782,15 @@ function handleToolCall(name, args = {}) {
 
       state.effectCount += 1;
       const id = `eff-${state.effectCount}`;
+      const attempt = 1;
+      const leaseToken = deriveLeaseToken(id, attempt, idempotencyKey);
       const rec = {
         id,
         effectKey,
         idempotencyKey,
         state: 'STARTED',
+        attempt,
+        leaseToken,
         totalSteps,
         postcondition,
         reversalClass,
@@ -742,8 +800,12 @@ function handleToolCall(name, args = {}) {
         startMs: now,
         deadlineMs,
         closedMs: null,
+        maxReadbackAgeMs,
+        maxRecoveryAttempts,
+        recoveryAttempts: 0,
         steps: [],
         readbackDigest: ZERO_DIGEST_HEX,
+        fenceDigest: ZERO_DIGEST_HEX,
         compensatedById: null,
         supersedesId: '',
         lastEventHash: ZERO_DIGEST_HEX,
@@ -754,6 +816,7 @@ function handleToolCall(name, args = {}) {
         idempotencyKey: rec.idempotencyKey,
         kind: 'START',
         state: 'STARTED',
+        attempt: rec.attempt,
         stepIndex: 0,
         totalSteps: rec.totalSteps,
         actor,
@@ -761,6 +824,8 @@ function handleToolCall(name, args = {}) {
         reversalClass: rec.reversalClass,
         stateChanged: false,
         readbackDigest: ZERO_DIGEST_HEX,
+        fenceDigest: ZERO_DIGEST_HEX,
+        observedHeight: 0,
         humanApproval: rec.humanApprovalId,
         deadlineHeight: rec.deadlineMs,
         height: now,
@@ -776,6 +841,8 @@ function handleToolCall(name, args = {}) {
         deduplicated: false,
         applied: true,
         effectId: rec.id,
+        attempt: rec.attempt,
+        leaseToken: rec.leaseToken,
         state: rec.state,
         cleanupOwner: rec.cleanupOwner,
         deadlineMs: rec.deadlineMs,
@@ -797,6 +864,17 @@ function handleToolCall(name, args = {}) {
           reasonCode: rec.state === 'IN_DOUBT' ? 'EFFECT_DEADLINE_EXCEEDED' : 'EFFECT_NOT_STARTED',
         };
       }
+      const attempt = args.attempt !== undefined ? Number(args.attempt) : rec.attempt;
+      const leaseToken = args.leaseToken !== undefined ? String(args.leaseToken) : rec.leaseToken;
+      if (attempt !== rec.attempt || leaseToken !== rec.leaseToken) {
+        return {
+          recorded: false,
+          effectId: rec.id,
+          state: rec.state,
+          reasonCode: 'STALE_ATTEMPT_OR_LEASE',
+          message: 'DENIED: stale attempt number or lease token',
+        };
+      }
       const stepIndex = Number(args.stepIndex);
       if (!Number.isInteger(stepIndex) || stepIndex < 1 || stepIndex > rec.totalSteps) {
         throw new Error(`stepIndex ${stepIndex} out of bounds 1..${rec.totalSteps}`);
@@ -807,6 +885,7 @@ function handleToolCall(name, args = {}) {
           recorded: true,
           deduplicated: true,
           effectId: rec.id,
+          attempt: rec.attempt,
           stepIndex,
           totalSteps: rec.totalSteps,
           state: rec.state,
@@ -822,6 +901,7 @@ function handleToolCall(name, args = {}) {
         idempotencyKey: rec.idempotencyKey,
         kind: 'STEP',
         state: 'STARTED',
+        attempt: rec.attempt,
         stepIndex,
         totalSteps: rec.totalSteps,
         actor: String(args.actor || state.session.caller),
@@ -829,10 +909,13 @@ function handleToolCall(name, args = {}) {
         reversalClass: rec.reversalClass,
         stateChanged,
         readbackDigest: outputDigest,
+        fenceDigest: ZERO_DIGEST_HEX,
+        observedHeight: now,
         deadlineHeight: rec.deadlineMs,
         height: now,
       });
       const receipt = {
+        attempt: rec.attempt,
         stepIndex,
         totalSteps: rec.totalSteps,
         stepName: String(args.stepName || `step-${stepIndex}`),
@@ -847,6 +930,7 @@ function handleToolCall(name, args = {}) {
         recorded: true,
         deduplicated: false,
         effectId: rec.id,
+        attempt: rec.attempt,
         stepIndex,
         totalSteps: rec.totalSteps,
         state: rec.state,
@@ -863,30 +947,93 @@ function handleToolCall(name, args = {}) {
       if (rec.state !== 'STARTED' && rec.state !== 'IN_DOUBT') {
         throw new Error(`cannot close effect ${effectId} in state ${rec.state}`);
       }
+      const attempt = args.attempt !== undefined ? Number(args.attempt) : rec.attempt;
+      const leaseToken = args.leaseToken !== undefined ? String(args.leaseToken) : rec.leaseToken;
+      if (attempt !== rec.attempt || leaseToken !== rec.leaseToken) {
+        return {
+          closed: false,
+          verdict: 'DENY',
+          effectId: rec.id,
+          state: rec.state,
+          reasonCode: 'STALE_ATTEMPT_OR_LEASE',
+          message: 'DENIED: stale attempt number or lease token',
+        };
+      }
+
       const requested = String(args.requestedOutcome || 'COMMITTED').trim();
       if (!['COMMITTED', 'ABORTED', 'PARTIAL'].includes(requested)) {
         throw new Error(`requestedOutcome must be COMMITTED, ABORTED, or PARTIAL`);
       }
       const readbackDigest = resolveDigest(args.readbackDigest, args.readback);
+      const fenceDigest = resolveDigest(args.fenceDigest, args.fenceProof);
+      const observedMs = args.observedMs !== undefined ? Math.trunc(Number(args.observedMs)) : now;
+
+      if (readbackDigest !== ZERO_DIGEST_HEX) {
+        if (observedMs < rec.startMs) {
+          return {
+            closed: false,
+            verdict: 'DENY',
+            effectId: rec.id,
+            state: rec.state,
+            reasonCode: 'READBACK_BEFORE_START',
+            message: 'DENIED: read-back observation timestamp predates effect start',
+          };
+        }
+        if (observedMs > now) {
+          return {
+            closed: false,
+            verdict: 'DENY',
+            effectId: rec.id,
+            state: rec.state,
+            reasonCode: 'READBACK_IN_FUTURE',
+            message: 'DENIED: read-back observation timestamp is in the future',
+          };
+        }
+        if (now - observedMs > rec.maxReadbackAgeMs) {
+          return {
+            closed: false,
+            verdict: 'DENY',
+            effectId: rec.id,
+            state: rec.state,
+            reasonCode: 'READBACK_TOO_OLD',
+            message: 'DENIED: read-back observation exceeds allowed age',
+          };
+        }
+      }
+
       const stateChanged = Boolean(args.stateChanged);
       const anyStepChanged = rec.steps.some((s) => s.stateChanged);
 
-      // Checked close: exit 0 with no read-back or unchanged state NEVER closes COMMITTED.
+      // Checked close:
+      // - COMMITTED requires fresh readback, stateChanged=true, and all steps recorded.
+      // - "Nothing seen" closes ABORTED ONLY with a non-zero fenceDigest proving the grant cannot land later;
+      //   without a fence it remains IN_DOUBT and holds the effect-key fence.
       let finalState = requested;
       if (requested === 'COMMITTED') {
         if (!stateChanged || readbackDigest === ZERO_DIGEST_HEX) {
-          finalState = anyStepChanged ? 'PARTIAL' : 'ABORTED';
+          if (anyStepChanged) {
+            finalState = 'PARTIAL';
+          } else if (fenceDigest !== ZERO_DIGEST_HEX) {
+            finalState = 'ABORTED';
+          } else {
+            finalState = 'IN_DOUBT';
+          }
         } else if (rec.steps.length < rec.totalSteps) {
           finalState = 'PARTIAL';
         }
-      } else if (requested === 'ABORTED' && anyStepChanged) {
-        finalState = 'PARTIAL';
+      } else if (requested === 'ABORTED') {
+        if (anyStepChanged) {
+          finalState = 'PARTIAL';
+        } else if (fenceDigest === ZERO_DIGEST_HEX) {
+          finalState = 'IN_DOUBT';
+        }
       }
 
       rec.state = finalState;
       rec.readbackDigest = readbackDigest;
-      rec.closedMs = now;
+      rec.fenceDigest = fenceDigest;
       if (finalState === 'COMMITTED' || finalState === 'ABORTED') {
+        rec.closedMs = now;
         state.openEffectsByKey.delete(rec.effectKey);
       }
 
@@ -896,6 +1043,7 @@ function handleToolCall(name, args = {}) {
         idempotencyKey: rec.idempotencyKey,
         kind: 'CLOSE',
         state: finalState,
+        attempt: rec.attempt,
         stepIndex: rec.steps.length,
         totalSteps: rec.totalSteps,
         actor: String(args.actor || state.session.caller),
@@ -903,6 +1051,8 @@ function handleToolCall(name, args = {}) {
         reversalClass: rec.reversalClass,
         stateChanged: stateChanged || anyStepChanged,
         readbackDigest,
+        fenceDigest,
+        observedHeight: observedMs,
         deadlineHeight: rec.deadlineMs,
         height: now,
       });
@@ -917,11 +1067,14 @@ function handleToolCall(name, args = {}) {
       };
       const verified = verifyEffectLifecycleChain(lifecycleBundle);
       return {
+        closed: true,
         effectId: rec.id,
+        attempt: rec.attempt,
         requestedOutcome: requested,
         state: finalState,
         fenced: state.openEffectsByKey.has(rec.effectKey),
         readbackDigest,
+        fenceDigest,
         rootHex,
         verified: verified.verified,
         lifecycleBundle,
@@ -938,12 +1091,15 @@ function handleToolCall(name, args = {}) {
             effectId: rec.id,
             effectKey: rec.effectKey,
             state: rec.state,
+            attempt: rec.attempt,
             cleanupOwner: rec.cleanupOwner,
             reversalClass: rec.reversalClass,
             ageMs: Math.max(0, now - rec.startMs),
             stepsRecorded: rec.steps.length,
             totalSteps: rec.totalSteps,
             steps: rec.steps,
+            recoveryAttempts: rec.recoveryAttempts,
+            maxRecoveryAttempts: rec.maxRecoveryAttempts,
             deadlineMs: rec.deadlineMs,
             postcondition: rec.postcondition,
             undoSpec: rec.undoSpec,
@@ -959,6 +1115,14 @@ function handleToolCall(name, args = {}) {
     }
 
     case 'arobi_compensate': {
+      if (state.sessionPaused) {
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'COMPENSATION_BLOCKED_WHILE_PAUSED',
+          message: 'DENIED: compensation cannot start while session or grant is paused',
+        };
+      }
       const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
       const originalEffectId = String(args.originalEffectId || args.effectId || '').trim();
       const orig = state.effects.get(originalEffectId);
@@ -988,6 +1152,7 @@ function handleToolCall(name, args = {}) {
           idempotencyKey: orig.idempotencyKey,
           kind: 'ACCEPT',
           state: 'ACCEPTED',
+          attempt: orig.attempt,
           stepIndex: orig.steps.length,
           totalSteps: orig.totalSteps,
           actor: humanApprover,
@@ -995,6 +1160,8 @@ function handleToolCall(name, args = {}) {
           reversalClass: orig.reversalClass,
           stateChanged: false,
           readbackDigest: reasonDigest,
+          fenceDigest: ZERO_DIGEST_HEX,
+          observedHeight: now,
           humanApproval: humanApprover,
           deadlineHeight: orig.deadlineMs,
           height: now,
@@ -1026,16 +1193,8 @@ function handleToolCall(name, args = {}) {
           message: 'IRREVERSIBLE effect requires explicit human acceptPartial=true',
         };
       }
-      const readbackDigest = resolveDigest(args.readbackDigest, args.readback);
-      if (!args.restoredOriginalState || readbackDigest === ZERO_DIGEST_HEX) {
-        return {
-          compensated: false,
-          verdict: 'DENY',
-          reasonCode: 'RESTORED_READBACK_REQUIRED',
-          message: 'COMPENSATED requires restoredOriginalState=true and non-zero read-back confirming restored state',
-        };
-      }
-      const compIdem = String(args.compIdempotencyKey || `comp:${orig.id}`).trim();
+
+      const compIdem = String(args.compIdempotencyKey || `comp:${orig.id}:${orig.recoveryAttempts + 1}`).trim();
       if (state.effectsByIdempotency.has(compIdem)) {
         const compId = state.effectsByIdempotency.get(compIdem);
         return {
@@ -1049,14 +1208,111 @@ function handleToolCall(name, args = {}) {
         };
       }
 
+      if (orig.recoveryAttempts >= orig.maxRecoveryAttempts) {
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'RECOVERY_LIMIT_EXCEEDED',
+          recoveryAttempts: orig.recoveryAttempts,
+          maxRecoveryAttempts: orig.maxRecoveryAttempts,
+          message: 'DENIED: bounded recovery attempt limit exceeded',
+        };
+      }
+
+      const compDeadlineMs = args.compDeadlineMs !== undefined ? Math.trunc(Number(args.compDeadlineMs)) : now + 10_000;
+      if (compDeadlineMs <= now) {
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'INVALID_COMPENSATION_DEADLINE',
+          message: 'compDeadlineMs must be strictly greater than current timestamp',
+        };
+      }
+
+      orig.recoveryAttempts += 1;
+      const recAttempt = orig.recoveryAttempts;
       state.effectCount += 1;
       const compId = `eff-${state.effectCount}`;
+      const compLease = deriveLeaseToken(compId, recAttempt, compIdem);
       const actor = String(args.actor || orig.cleanupOwner);
+      const readbackDigest = resolveDigest(args.readbackDigest, args.readback);
+      const observedMs = args.observedMs !== undefined ? Math.trunc(Number(args.observedMs)) : now;
+      const readbackFresh = readbackDigest !== ZERO_DIGEST_HEX
+        && observedMs >= orig.startMs
+        && observedMs <= now
+        && (now - observedMs) <= orig.maxReadbackAgeMs;
+
+      if (!args.restoredOriginalState || !readbackFresh) {
+        const failedComp = {
+          id: compId,
+          effectKey: `${orig.effectKey}:compensate:${recAttempt}`,
+          idempotencyKey: compIdem,
+          state: 'IN_DOUBT',
+          attempt: recAttempt,
+          leaseToken: compLease,
+          totalSteps: 1,
+          postcondition: `restored state prior to ${orig.id}`,
+          reversalClass: 'COMPENSABLE',
+          undoSpec: orig.undoSpec,
+          cleanupOwner: orig.cleanupOwner,
+          humanApprovalId: '',
+          startMs: now,
+          deadlineMs: compDeadlineMs,
+          closedMs: null,
+          maxReadbackAgeMs: orig.maxReadbackAgeMs,
+          maxRecoveryAttempts: 1,
+          recoveryAttempts: 0,
+          steps: [],
+          readbackDigest,
+          fenceDigest: ZERO_DIGEST_HEX,
+          compensatedById: null,
+          supersedesId: orig.id,
+          lastEventHash: ZERO_DIGEST_HEX,
+        };
+        const failEv = sealLifecycleEvent({
+          effectId: failedComp.id,
+          effectKey: failedComp.effectKey,
+          idempotencyKey: failedComp.idempotencyKey,
+          kind: 'COMPENSATE',
+          state: 'IN_DOUBT',
+          attempt: recAttempt,
+          stepIndex: 0,
+          totalSteps: 1,
+          actor,
+          owner: failedComp.cleanupOwner,
+          reversalClass: failedComp.reversalClass,
+          stateChanged: false,
+          readbackDigest,
+          fenceDigest: ZERO_DIGEST_HEX,
+          observedHeight: observedMs,
+          supersedesId: orig.id,
+          deadlineHeight: failedComp.deadlineMs,
+          height: now,
+        });
+        failedComp.lastEventHash = failEv.leafHash;
+        state.effects.set(failedComp.id, failedComp);
+        state.effectsByIdempotency.set(failedComp.idempotencyKey, failedComp.id);
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'RESTORED_READBACK_REQUIRED',
+          originalEffectId: orig.id,
+          compensationEffectId: failedComp.id,
+          compensationState: 'IN_DOUBT',
+          recoveryAttempts: orig.recoveryAttempts,
+          maxRecoveryAttempts: orig.maxRecoveryAttempts,
+          rootHex: effectLifecycleRootHex(),
+          message: 'COMPENSATED requires fresh non-zero read-back confirming restored state; recovery marked IN_DOUBT',
+        };
+      }
+
       const comp = {
         id: compId,
-        effectKey: `${orig.effectKey}:compensate`,
+        effectKey: `${orig.effectKey}:compensate:${recAttempt}`,
         idempotencyKey: compIdem,
         state: 'COMMITTED',
+        attempt: recAttempt,
+        leaseToken: compLease,
         totalSteps: 1,
         postcondition: `restored state prior to ${orig.id}`,
         reversalClass: 'COMPENSABLE',
@@ -1064,10 +1320,14 @@ function handleToolCall(name, args = {}) {
         cleanupOwner: orig.cleanupOwner,
         humanApprovalId: '',
         startMs: now,
-        deadlineMs: now + 1000,
+        deadlineMs: compDeadlineMs,
         closedMs: now,
+        maxReadbackAgeMs: orig.maxReadbackAgeMs,
+        maxRecoveryAttempts: 1,
+        recoveryAttempts: 0,
         steps: [],
         readbackDigest,
+        fenceDigest: ZERO_DIGEST_HEX,
         compensatedById: null,
         supersedesId: orig.id,
         lastEventHash: ZERO_DIGEST_HEX,
@@ -1078,6 +1338,7 @@ function handleToolCall(name, args = {}) {
         idempotencyKey: comp.idempotencyKey,
         kind: 'COMPENSATE',
         state: 'COMMITTED',
+        attempt: recAttempt,
         stepIndex: 1,
         totalSteps: 1,
         actor,
@@ -1085,6 +1346,8 @@ function handleToolCall(name, args = {}) {
         reversalClass: comp.reversalClass,
         stateChanged: true,
         readbackDigest,
+        fenceDigest: ZERO_DIGEST_HEX,
+        observedHeight: observedMs,
         supersedesId: orig.id,
         deadlineHeight: comp.deadlineMs,
         height: now,
@@ -1105,6 +1368,7 @@ function handleToolCall(name, args = {}) {
         idempotencyKey: orig.idempotencyKey,
         kind: 'COMPENSATE',
         state: 'COMPENSATED',
+        attempt: recAttempt,
         stepIndex: orig.steps.length,
         totalSteps: orig.totalSteps,
         actor,
@@ -1112,6 +1376,8 @@ function handleToolCall(name, args = {}) {
         reversalClass: orig.reversalClass,
         stateChanged: true,
         readbackDigest,
+        fenceDigest: ZERO_DIGEST_HEX,
+        observedHeight: observedMs,
         supersedesId: comp.id,
         deadlineHeight: orig.deadlineMs,
         height: now,
@@ -1131,6 +1397,7 @@ function handleToolCall(name, args = {}) {
         deduplicated: false,
         originalEffectId: orig.id,
         compensationEffectId: comp.id,
+        recoveryAttempt: recAttempt,
         state: orig.state,
         fenced: state.openEffectsByKey.has(orig.effectKey),
         readbackDigest,

@@ -221,6 +221,7 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     idempotencyKey: 'idem-1',
     kind: 'START',
     state: 'STARTED',
+    attempt: 1,
     stepIndex: 0,
     totalSteps: 3,
     actor: 'g1owner',
@@ -228,6 +229,8 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     reversalClass: 'COMPENSABLE',
     stateChanged: false,
     readbackDigest: ZERO_DIGEST_HEX,
+    fenceDigest: ZERO_DIGEST_HEX,
+    observedHeight: 0,
     supersedesId: '',
     humanApproval: '',
     deadlineHeight: 110,
@@ -235,7 +238,7 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
   };
   const l1 = effectEventLeafHash(e1);
   // Exact cross-language parity with Gno v1.8.0 TestEffectLifecycleAllSixAcceptanceTests
-  assert.equal(l1, '34a2d178d37aa8e5f952a774e5d872360ef361df689a9ed5b423601a5ff1122a');
+  assert.equal(l1, '1a8fd81abfd1ee3782b809aa560f61d9ea84b974c6ed1d1aa5289c2a0239610f');
 
   const e2 = {
     ...e1,
@@ -246,6 +249,7 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     stepIndex: 1,
     stateChanged: true,
     readbackDigest: step1Dig,
+    observedHeight: 101,
     height: 101,
   };
   const l2 = effectEventLeafHash(e2);
@@ -266,10 +270,11 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     seq: 4,
     prevHash: l3,
     effectId: 'eff-2',
-    effectKey: 'deploy:prod:compensate',
+    effectKey: 'deploy:prod:compensate:1',
     idempotencyKey: 'comp-1',
     kind: 'COMPENSATE',
     state: 'COMMITTED',
+    attempt: 1,
     stepIndex: 1,
     totalSteps: 1,
     actor: 'g1owner',
@@ -277,6 +282,8 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     reversalClass: 'COMPENSABLE',
     stateChanged: true,
     readbackDigest: restoredDig,
+    fenceDigest: ZERO_DIGEST_HEX,
+    observedHeight: 115,
     supersedesId: 'eff-1',
     humanApproval: '',
     deadlineHeight: 116,
@@ -294,6 +301,7 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
     actor: 'g1owner',
     stateChanged: true,
     readbackDigest: restoredDig,
+    observedHeight: 115,
     supersedesId: 'eff-2',
     height: 115,
   };
@@ -310,6 +318,57 @@ test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOU
   assert.equal(ok.verified, true);
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.finalStates['eff-1'], 'COMPENSATED');
+
+  // Rule 7 negative: gap, fork, reorder, or tampered root MUST fail closed offline.
+  const gapped = verifyEffectLifecycleChain({ events: [e1, e3], rootHex });
+  assert.equal(gapped.verified, false);
+  assert.ok(gapped.errors.some((e) => e.includes('seq gap/reorder')));
+
+  const reordered = verifyEffectLifecycleChain({ events: [e2, e1] });
+  assert.equal(reordered.verified, false);
+  assert.ok(reordered.errors.some((e) => e.includes('prevHash chain break')));
+
+  const nonPassive = verifyEffectLifecycleChain({ events: [{ ...e1, hook: () => {} }] });
+  assert.equal(nonPassive.verified, false);
+  assert.ok(nonPassive.errors.some((e) => e.includes('not passive')));
+
+  // Rule 1 negative: ABORTED without non-zero fenceDigest MUST fail closed offline.
+  const unfencedAbort = verifyEffectLifecycleChain({
+    events: [
+      e1,
+      { ...e1, seq: 2, prevHash: l1, kind: 'CLOSE', state: 'ABORTED', fenceDigest: ZERO_DIGEST_HEX, height: 102 },
+    ],
+  });
+  assert.equal(unfencedAbort.verified, false);
+  assert.ok(unfencedAbort.errors.some((e) => e.includes('ABORTED requires non-zero fenceDigest')));
+
+  // Rule 2 negative: COMMITTED observed before effect started MUST fail closed offline.
+  const preStartCommit = verifyEffectLifecycleChain({
+    events: [
+      e1,
+      {
+        ...e1,
+        seq: 2,
+        prevHash: l1,
+        kind: 'CLOSE',
+        state: 'COMMITTED',
+        stepIndex: 3,
+        stateChanged: true,
+        readbackDigest: restoredDig,
+        observedHeight: 99,
+        height: 102,
+      },
+    ],
+  });
+  assert.equal(preStartCommit.verified, false);
+  assert.ok(preStartCommit.errors.some((e) => e.includes('observedHeight out of')));
+
+  // Rule 3 negative: STEP with mismatched attempt MUST fail closed offline.
+  const staleAttempt = verifyEffectLifecycleChain({
+    events: [e1, { ...e2, attempt: 2 }],
+  });
+  assert.equal(staleAttempt.verified, false);
+  assert.ok(staleAttempt.errors.some((e) => e.includes('does not match active attempt')));
 
   // Forged COMMITTED without readback must fail closed offline.
   const badCommit = verifyEffectLifecycleChain({
