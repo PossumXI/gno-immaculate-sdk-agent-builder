@@ -53,9 +53,9 @@ stderr 'passed its deadline height'
 # Anyone may seal IN_DOUBT; it changes the state and nothing else.
 gnokey maketx call -pkgpath gno.land/r/arobi/effects -func MarkInDoubt -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test anyone
 stdout '\("IN_DOUBT" string\)'
-gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoValue("a1")'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a1\")"
 stdout '\("10" string\)'
-gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoValue("a2")'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a2\")"
 stdout '\("" string\)'
 gnokey query vm/qeval --data 'gno.land/r/arobi/effects.VerifyEffect(1)'
 stdout '\("IN_DOUBT" string\)'
@@ -76,7 +76,7 @@ gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 2 -arg
 stdout OK!
 gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CloseDemoEffect -args 2 -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
 stdout '\("COMMITTED" string\)'
-gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoValue("a1")'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a1\")"
 stdout '\("" string\)'
 gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectState(1)'
 stdout '\("COMPENSATED" string\)'

@@ -35,7 +35,7 @@ stderr 'another agent, key or postcondition'
 
 # The approver approves exactly this effect: key mail:customers, postcondition m1 holding "sent" (the digest below is
 # what DemoDigest returns for it). Then it starts, once.
-gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoDigest("m1", "sent")'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoDigest(\"m1\", \"sent\")"
 stdout '\("f67be18586311abf25cc20d8848583e87bdbda572a4d62b8432e964c90607b5c" string\)'
 gnokey maketx call -pkgpath gno.land/r/arobi/effects -func ApproveEffect -args worker-1 -args mail:customers -args f67be18586311abf25cc20d8848583e87bdbda572a4d62b8432e964c90607b5c -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test approver
 stdout '\(2 uint64\)'

@@ -31,7 +31,7 @@ stdout '\(1 uint64\)'
 stderr 'belongs to effect key ledger:bob'
 gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectCount()'
 stdout '\(1 uint64\)'
-gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoValue("b1")'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"b1\")"
 stdout '\("paid" string\)'
 gnokey query vm/qeval --data 'gno.land/r/arobi/effects.VerifyEffect(1)'
 stdout '\("COMMITTED" string\)'
