@@ -68,10 +68,14 @@ var (
 	settlementSink     address
 	accruedServiceFees int64
 
-	passports  = avl.NewTree() // agentID -> *AgentPassport
-	agentOrder []string
-	anchors    []sdk.AnchorRecord
-	globalAcc  sdk.Accumulator
+	// Storage whose gas per transaction stays flat as history grows: trees and counters, never a slice
+	// appended to on every call (a slice's backing array is loaded and saved in full each time).
+	passports   = avl.NewTree() // agentID -> *AgentPassport
+	agentCount  uint64         // agents ever registered
+	agentSeq    = avl.NewTree() // anchorKey(seq) -> agentID, in registration order
+	anchors     = avl.NewTree() // anchorKey(id) -> sdk.AnchorRecord
+	anchorCount uint64
+	globalAcc   sdk.Accumulator
 
 	// Built-in interactive governed demo agent & Familiar powered directly by gno.land/p/arobi/assurance.
 	demoAgent            *sdk.Agent
@@ -265,7 +269,8 @@ func RegisterAgent(cur realm, agentID, displayName, policyDigestHex, metadataURI
 		RegisteredHeight: height,
 	}
 	passports.Set(agentID, pp)
-	agentOrder = append(agentOrder, agentID)
+	agentCount++
+	agentSeq.Set(anchorKey(agentCount), agentID)
 
 	chain.Emit("ImmaculateAgentRegistered",
 		"agent_id", agentID,
@@ -402,7 +407,7 @@ func AnchorCheckpoint(
 	rec := sdk.AnchorRecord{
 		ChainID:        runtime.ChainID(),
 		Realm:          cur.PkgPath(),
-		AnchorID:       uint64(len(anchors)) + 1,
+		AnchorID:       anchorCount + 1,
 		AgentID:        agentID,
 		Caller:         caller.String(),
 		Height:         height,
@@ -414,7 +419,8 @@ func AnchorCheckpoint(
 	}
 
 	leaf := rec.LeafHash()
-	anchors = append(anchors, rec)
+	anchors.Set(anchorKey(rec.AnchorID), rec)
+	anchorCount = rec.AnchorID
 	globalAcc.Append(leaf)
 
 	pp.LastAnchorID = rec.AnchorID
@@ -589,7 +595,7 @@ func Root() string     { return sdk.Hex(globalAcc.Root()) }
 func DemoRoot() string { return sdk.Hex(ensureDemoAgent().Checkpoint().CheckpointRoot) }
 
 func ProofFor(anchorID, treeSize uint64) string {
-	if anchorID == 0 || anchorID > uint64(len(anchors)) {
+	if anchorID == 0 || anchorID > anchorCount {
 		panic("no anchor " + strconv.FormatUint(anchorID, 10))
 	}
 	proof, err := globalAcc.Proof(anchorID-1, treeSize)
@@ -629,10 +635,16 @@ func VerifyCheckpointProof(anchorID, treeSize uint64, leafHex, proofCSV string) 
 }
 
 func AnchorLeafHex(anchorID uint64) string {
-	if anchorID == 0 || anchorID > uint64(len(anchors)) {
+	if anchorID == 0 || anchorID > anchorCount {
 		panic("no anchor " + strconv.FormatUint(anchorID, 10))
 	}
-	return sdk.Hex(anchors[anchorID-1].LeafHash())
+	return sdk.Hex(anchors.Get(anchorKey(anchorID)).(sdk.AnchorRecord).LeafHash())
+}
+
+// anchorKey is the anchor id in fixed-width decimal, so the tree's key order is id order.
+func anchorKey(id uint64) string {
+	s := strconv.FormatUint(id, 10)
+	return strings.Repeat("0", 20-len(s)) + s
 }
 
 // ── Internal Helpers ─────────────────────────────────────────────────────────

@@ -46,7 +46,7 @@ func renderHome() string {
 	b.WriteString("`EffectClosure`, and anchors RFC 6962 Merkle roots directly on Gno.land.\n\n")
 
 	b.WriteString("| Metric | Value |\n| --- | --- |\n")
-	b.WriteString("| Registered Agents | " + strconv.Itoa(len(agentOrder)) + " |\n")
+	b.WriteString("| Registered Agents | " + strconv.FormatUint(agentCount, 10) + " |\n")
 	b.WriteString("| Anchored Checkpoints | " + strconv.FormatUint(globalAcc.Size(), 10) + " |\n")
 	b.WriteString("| Global RFC 6962 Root | `" + sdk.Hex(globalAcc.Root()) + "` |\n")
 	b.WriteString("| Checkpoint Anchor Service Fee | `" + strconv.FormatInt(anchorFeeUgnot, 10) + "ugnot` per checkpoint |\n")
@@ -56,12 +56,18 @@ func renderHome() string {
 	b.WriteString("| Scientific Benchmarks | [Measured Evaluation (E1–E4)](/r/arobi/assurance:benchmarks) |\n\n")
 
 	b.WriteString("## Registered Agent Passports\n\n")
-	if len(agentOrder) == 0 {
+	if agentCount == 0 {
 		b.WriteString("_No external agents registered yet. Call `RegisterAgent` to mint a passport._\n\n")
 	} else {
 		b.WriteString("| Agent ID | Display Name | Status | Anchors | Total Leaves | Tip Root |\n")
 		b.WriteString("| --- | --- | --- | ---: | ---: | --- |\n")
-		for _, id := range agentOrder {
+		// The latest 20, newest first: a page stays the same size however many agents exist.
+		var ids []string
+		agentSeq.ReverseIterate("", "", func(_ string, v any) bool {
+			ids = append(ids, v.(string))
+			return len(ids) >= 20
+		})
+		for _, id := range ids {
 			pp, ok := passports.Get(id).(*AgentPassport)
 			if !ok || pp == nil {
 				continue
@@ -80,15 +86,15 @@ func renderHome() string {
 	}
 
 	b.WriteString("## Recent Anchored Checkpoints\n\n")
-	if len(anchors) == 0 {
+	if anchorCount == 0 {
 		b.WriteString("_No checkpoints anchored yet._\n")
 	} else {
-		start := 0
-		if len(anchors) > 20 {
-			start = len(anchors) - 20
-		}
-		for i := len(anchors) - 1; i >= start; i-- {
-			a := anchors[i]
+		var recent []sdk.AnchorRecord
+		anchors.ReverseIterate("", "", func(_ string, v any) bool {
+			recent = append(recent, v.(sdk.AnchorRecord))
+			return len(recent) >= 20
+		})
+		for _, a := range recent {
 			idStr := strconv.FormatUint(a.AnchorID, 10)
 			b.WriteString("- [Checkpoint #" + idStr + "](/r/arobi/assurance:checkpoint/" + idStr + ") — agent `" +
 				a.AgentID + "`, leaves `" + strconv.FormatUint(a.LeafCount, 10) +
@@ -129,10 +135,10 @@ func renderAgent(agentID string) string {
 
 func renderCheckpoint(idStr string) string {
 	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil || id == 0 || id > uint64(len(anchors)) {
+	if err != nil || id == 0 || id > anchorCount {
 		return "# Checkpoint Not Found\n\nInvalid checkpoint id `" + idStr + "`.\n\n[Back](/r/arobi/assurance)"
 	}
-	a := anchors[id-1]
+	a := anchors.Get(anchorKey(id)).(sdk.AnchorRecord)
 	size := globalAcc.Size()
 	proofCSV := ProofFor(id, size)
 	var b strings.Builder
