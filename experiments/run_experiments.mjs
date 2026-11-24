@@ -2726,6 +2726,8 @@ const md = [
   `| Raw Unit Cosine | ${e13.hubnessE13a.rawCosineTop1Recall_pct}% | ${e13.hubnessE13a.rawCosineHubHijack_pct}% | — |`,
   `| **Fixed-Point \`HubnessNormalizeFixed\`** | **${e13.hubnessE13a.hubnessNormTop1Recall_pct}%** | **${e13.hubnessE13a.hubnessNormHubHijack_pct}%** | **${e13.hubnessE13a.hubnessNormCleanNoHubTop1Recall_pct}%** |`,
   '',
+  '> **Honest Scope Note:** `EnableHubnessNorm` defaults to `false` in `MemoryVault` (opt-in via `SetHubnessCalibration`). On adversarial universal-hub attacks it rescues Top-1 recall from `0%` to `100%`, whereas blanket hub z-scoring on clean natural-language multi-session corpora can penalize legitimately high-centrality factual documents. Use CAR debiasing (E9) + Hybrid RRF (E4) by default and enable hubness calibration specifically when universal-hub poisoning is suspected.',
+  '',
   '### E13b — Multi-Regime Scalar Random-Walk Kalman Riccati Filter (48,000 Updates across $q/r \\in \\{0.01, 0.10, 1.00\\}$, Cross-Ref Kalman 1960 / Wu et al. NeurIPS 2002 / Arobi Labs P6)',
   '',
   `- **Fixed-Point Riccati Gain Fidelity (53 SNR pairs):** \`maxGainAbsError = ${e13.kalmanE13b.maxGainAbsError}\` (\`<= 1e-5\`); **48,000-Step Trajectory Fidelity:** \`maxStateAbsError = ${e13.kalmanE13b.maxStateAbsError}\` (\`<= 1e-3\`).`,

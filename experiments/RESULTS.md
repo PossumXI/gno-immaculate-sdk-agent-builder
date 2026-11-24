@@ -1,6 +1,6 @@
 # Scientific Evaluation Results — Immaculate SDK Agent Builder
 
-**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-24T01:46:39.285Z`
+**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-24T02:03:15.020Z`
 
 ---
 
@@ -192,6 +192,8 @@ Cross-referenced external discrete non-local dynamics concepts (Johannes Geisen 
 | --- | ---: | ---: | ---: |
 | Raw Unit Cosine | 0% | 100% | — |
 | **Fixed-Point `HubnessNormalizeFixed`** | **100%** | **0%** | **100%** |
+
+> **Honest Scope Note:** `EnableHubnessNorm` defaults to `false` in `MemoryVault` (opt-in via `SetHubnessCalibration`). On adversarial universal-hub attacks it rescues Top-1 recall from `0%` to `100%`, whereas blanket hub z-scoring on clean natural-language multi-session corpora can penalize legitimately high-centrality factual documents. Use CAR debiasing (E9) + Hybrid RRF (E4) by default and enable hubness calibration specifically when universal-hub poisoning is suspected.
 
 ### E13b — Multi-Regime Scalar Random-Walk Kalman Riccati Filter (48,000 Updates across $q/r \in \{0.01, 0.10, 1.00\}$, Cross-Ref Kalman 1960 / Wu et al. NeurIPS 2002 / Arobi Labs P6)
 

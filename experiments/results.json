@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-24T01:46:39.285Z",
+  "generatedAt": "2026-11-24T02:03:15.020Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -142,7 +142,7 @@
       "p/arobi/signals::TestBenchClassicalUnitNormalizeCos100PairsGas": 41781999,
       "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65430602,
       "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
-      "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68908161,
+      "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
       "p/arobi/assurance::TestAccumulatorRFC6962ProofsAndTamperRejection": 10632310,
       "p/arobi/assurance::TestGovernedAgentLifecycleProducesVerifiableEvidenceOutOfTheBox": 12771854,
       "p/arobi/assurance::TestFailClosedKillSwitchOverspendAndTamperDetection": 4579478,
