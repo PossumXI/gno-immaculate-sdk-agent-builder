@@ -14,7 +14,7 @@ import (
 
 var (
 	ownerAddr   = testutils.TestAddress("effects-agent-owner")
-	cleanupAddr  = testutils.TestAddress("effects-cleanup-owner")
+	cleanupAddr  = testutils.TestAddress("fx-cleanup-owner")
 	otherAddr    = testutils.TestAddress("effects-stranger")
 	approverAddr = testutils.TestAddress("effects-approver")
 )
