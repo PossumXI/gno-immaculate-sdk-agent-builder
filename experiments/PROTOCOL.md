@@ -197,3 +197,29 @@ When an off-chain harness (`gnosh.ai`, `Ullumii`, or an Arobi Whisper peer) obse
   - `100%` of valid consistency proofs verify in both Gno (`VerifyConsistency`) and Node.js (`verifyConsistencyProof`),
   - Proof length is strictly bounded by $\le 2\lceil\log_2 N_2\rceil + 1$ hashes,
   - `100%` of historical leaf tampering, root forgery, and size-mismatch attacks are rejected.
+
+---
+
+## Experiment E13 — Hubness Z-Score Calibration & Steady-State Scalar Random-Walk Kalman Filter (Pure Fixed-Point Integer Gno)
+
+### Motivation & Attribution
+1. **Hubness Z-Score Calibration (`HubnessNormalizeFixed`, E13a):** Even after Common-Average-Reference debiasing (E9), high-dimensional embedding spaces exhibit *hubness* (Radovanović, Nanopoulos & Ivanović, JMLR 2010; Arobi Labs' cortical calibration primitive P3): a high-centrality "universal hub" memory sits close enough to the manifold centroid that its raw cosine similarity against *every* query passes static thresholds ($\cos \approx 0.68 > 0.55$) and hijacks Top-1 retrieval away from the true specific target ($\cos \approx 0.62$). Calibrating each stored memory's background affinity $(\mu_j, \sigma_j)$ over a calibration query block and scoring $z(q, m_j) = (\cos(q, m_j) - \mu_j)/\max(\sigma_j, \sigma_{\min})$ suppresses universal hubs to $z \approx 0$ while sharply amplifying true query-specific matches.
+2. **Steady-State Random-Walk Kalman Filter (`KalmanRWFixed`, E13b):** Based on Kalman (1960), Wu et al. (NeurIPS 2002), and Arobi Labs' scalar random-walk Riccati gain primitive (P6), solving the algebraic Riccati equation $P^+ = \frac{q + \sqrt{q^2 + 4qr}}{2}$, $K^* = \frac{P^+}{P^+ + r}$ ONCE in pure integer fixed-point arithmetic yields an $O(1)$ per-step zero-`ISqrt64` tracker for latent agent telemetry drift across multiple SNR regimes ($q/r \in \{0.01, 0.10, 1.00\}$).
+
+### Pre-Registered Criteria (`seed = 20261123`)
+- **H13a (Hubness Hijack Suppression, `300` episodes in $\mathbb{R}^{16}$):** Under an adversarial universal-hub memory attack where raw cosine Top-1 recall drops below `25%` (`> 75%` hub hijack rate), fixed-point `HubnessNormalizeFixed` achieves **$\ge 95\%$ Top-1 exact-target recall**, reduces hub hijack rate to **$\le 5\%$**, and maintains **$\ge 98\%$ clean Top-1 recall** when no hub is present.
+- **H13b (Multi-Regime Fixed-Point Kalman Optimality, `200` episodes × `80` steps across $q/r \in \{0.01, 0.10, 1.00\}$):**
+  - Fixed-point `KalmanRWGainFixed(q, r)` matches IEEE-754 `float64` Riccati steady-state gain within **`maxAbsError <= 1e-5`**,
+  - `KalmanRWFixed` reduces state-tracking RMSE by **$\ge 35\%$** vs raw observations and strictly outperforms mismatched fixed-$\alpha$ EWMA ($\alpha = 0.05$ and $\alpha = 0.50$) on multi-regime mean RMSE,
+  - Fixed-point state trajectory matches `float64` Kalman within **`maxStateAbsError <= 1e-3`** across all 48,000 updates.
+
+---
+
+## Experiment E14 — Canonical Cross-Chain Checkpoint & Strictly-Ordered Execution Receipt Commitments
+
+### Motivation
+When governed agents bridge execution receipts from an external BFT/execution chain onto Gno.land (`r/arobi/assurance`), accepting unordered or duplicated `(height, txIndex)` records lets a faulty relayer anchor a Merkle root that an independent verifier rebuilding the batch from signed block headers cannot reproduce.
+
+### Pre-Registered Criteria (`100` ordered batches + `500` adversarial tamper/reorder/duplicate mutations, `seed = 20261123`)
+- **H14a (Strict Ordering & Deterministic Parity):** `BuildOrderedReceiptTree` accepts `100%` (`100/100`) strictly increasing `(height, txIndex)` receipt batches and matches exact canonical RFC 6962 roots, inclusion proofs, and checkpoint digests (`arobi-checkpoint-v1`, `arobi-exec-receipt-v1`) across Gno and Node.js.
+- **H14b (100% Adversarial Tamper & Non-Canonical Order Rejection):** `100%` (`500/500`) adversarial mutations (swapped `(height, txIndex)`, duplicate `(height, txIndex)`, altered `gasUsed`, altered `exitCode`, altered `resultHash`, altered `headerHash` or `chainID`) are rejected (`0` false accepts).

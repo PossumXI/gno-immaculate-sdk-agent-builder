@@ -564,3 +564,103 @@ func CalibrateThresholdYoudenFixed(cleanScores, attackScores []int64) (bestThres
 	}
 	return bestT, bestJ, rocAucFixed, nil
 }
+
+// CosineFixed computes the deterministic fixed-point dot product of two unit-normalized
+// vectors (each scaled to Scale), clamped to [-Scale, +Scale].
+func CosineFixed(u, w []int64) (int64, error) {
+	if len(u) == 0 || len(u) != len(w) {
+		return 0, errors.New("vectors must be non-empty and have matching dimensions")
+	}
+	var sum int64
+	for i := range u {
+		sum += MulFixed(u[i], w[i])
+	}
+	if sum > Scale {
+		sum = Scale
+	}
+	if sum < -Scale {
+		sum = -Scale
+	}
+	return sum, nil
+}
+
+// HubStatsFixed stores a memory record's background cosine affinity distribution (mean, std)
+// over a calibration query block (Radovanovic et al., JMLR 2010; Arobi Labs Utah P3 primitive).
+// Validated in Experiment E13a.
+type HubStatsFixed struct {
+	MeanFixed int64
+	StdFixed  int64
+	Samples   int
+}
+
+// FitHubStatsFixed computes deterministic fixed-point mean and standard deviation of
+// cosine similarity between memoryUnit and a calibration block of unit query vectors.
+// If excludeSelfIdx >= 0, calibrationUnits[excludeSelfIdx] is omitted (leave-one-out).
+func FitHubStatsFixed(calibrationUnits [][]int64, memoryUnit []int64, excludeSelfIdx int, minStdFixed int64) (HubStatsFixed, error) {
+	if len(memoryUnit) == 0 {
+		return HubStatsFixed{}, errors.New("empty memory vector")
+	}
+	if minStdFixed <= 0 {
+		minStdFixed = 50000 // 0.05 floor prevents division-by-zero on degenerate hubs
+	}
+	scores := make([]int64, 0, len(calibrationUnits))
+	var sum int64
+	for i, cu := range calibrationUnits {
+		if i == excludeSelfIdx {
+			continue
+		}
+		if len(cu) != len(memoryUnit) {
+			return HubStatsFixed{}, errors.New("calibration vector dimension mismatch")
+		}
+		c, err := CosineFixed(cu, memoryUnit)
+		if err != nil {
+			return HubStatsFixed{}, err
+		}
+		scores = append(scores, c)
+		sum += c
+	}
+	n := len(scores)
+	if n == 0 {
+		return HubStatsFixed{MeanFixed: 0, StdFixed: minStdFixed, Samples: 0}, nil
+	}
+	mean := sum / int64(n)
+	var varSum uint64
+	for _, s := range scores {
+		d := s - mean
+		if d < 0 {
+			d = -d
+		}
+		varSum += uint64(d) * uint64(d)
+	}
+	std := int64(ISqrt64(varSum / uint64(n)))
+	if std < minStdFixed {
+		std = minStdFixed
+	}
+	return HubStatsFixed{
+		MeanFixed: mean,
+		StdFixed:  std,
+		Samples:   n,
+	}, nil
+}
+
+// HubNormalizeScoreFixed returns the standardized hubness z-score in Scale units:
+//
+//	z(q, m) = ((cos(q, m) - mean) * Scale) / max(std, minStdFixed)
+//
+// Universal hubs with high background similarity (high mean, tiny variance) collapse to z ~ 0,
+// while query-specific target memories spike to z >> 2*Scale.
+func HubNormalizeScoreFixed(queryUnit, memoryUnit []int64, stats HubStatsFixed, minStdFixed int64) (int64, error) {
+	cos, err := CosineFixed(queryUnit, memoryUnit)
+	if err != nil {
+		return 0, err
+	}
+	if minStdFixed <= 0 {
+		minStdFixed = 50000
+	}
+	denom := stats.StdFixed
+	if denom < minStdFixed {
+		denom = minStdFixed
+	}
+	return ((cos - stats.MeanFixed) * Scale) / denom, nil
+}
+

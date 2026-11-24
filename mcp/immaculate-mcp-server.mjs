@@ -21,6 +21,7 @@ import {
 import { UllumiiAssuranceBridge } from '../adapters/ullumii-adapter.mjs';
 import {
   verifyEvidenceBundle,
+  verifyCrossChainCheckpoint,
   consistencyProof,
   verifyConsistencyProof,
   merkleTreeHead,
@@ -229,6 +230,20 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'verify_cross_chain_checkpoint',
+    description: 'Verify a canonical cross-chain checkpoint digest (arobi-checkpoint-v1) and strictly-ordered execution receipt batch RFC 6962 tree (arobi-exec-receipt-v1, Experiment E14).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        checkpoint: { type: 'object' },
+        receipts: { type: 'array', items: { type: 'object' } },
+        expectedCheckpointDigest: { type: 'string' },
+        expectedReceiptRoot: { type: 'string' },
+        verifyIndex: { type: 'number' },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args = {}) {
@@ -423,6 +438,16 @@ function handleToolCall(name, args = {}) {
         proofLength: proof.length,
         verified,
       };
+    }
+
+    case 'verify_cross_chain_checkpoint': {
+      return verifyCrossChainCheckpoint({
+        checkpoint: args.checkpoint,
+        receipts: args.receipts,
+        expectedCheckpointDigest: args.expectedCheckpointDigest,
+        expectedReceiptRoot: args.expectedReceiptRoot,
+        verifyIndex: args.verifyIndex,
+      });
     }
 
     default:

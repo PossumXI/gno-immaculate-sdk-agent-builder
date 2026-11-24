@@ -17,6 +17,7 @@ var (
 	opaqueVault = testutils.TestAddress("assurance-vault")
 	agentOwner  = testutils.TestAddress("sdk-agent-owner")
 	stranger    = testutils.TestAddress("stranger")
+	deployAcct  = testutils.TestAddress("assurance-deployer")
 	selfAddr    = chain.PackageAddress("gno.land/r/arobi/assurance")
 )
 
@@ -27,7 +28,10 @@ const (
 )
 
 func resetRealm() {
-	operator = ""
+	// gno test initializes packages with no origin caller, so simulate deployment as deployAcct
+	// through the exact helper init() calls on chain.
+	testing.SetOriginCaller(deployAcct)
+	initOperatorFromDeployment()
 	settlementSink = ""
 	accruedServiceFees = 0
 	anchorFeeUgnot = 1000
@@ -64,10 +68,10 @@ func sendFee(fee int64) {
 func TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees(cur realm, t *testing.T) {
 	resetRealm()
 
-	// Operator configures opaque settlement privately (never printed in Render or events).
-	testing.SetRealm(testing.NewUserRealm(opAdmin))
+	// Deployer (operator from init) transfers role to opAdmin, who configures settlement sink.
+	testing.SetRealm(testing.NewUserRealm(deployer))
 	sendFee(0)
-	InitOperator(cross(cur))
+	TransferOperator(cross(cur), opAdmin)
 	testing.SetRealm(testing.NewUserRealm(opAdmin))
 	sendFee(0)
 	SetSettlementSink(cross(cur), opaqueVault)
@@ -177,9 +181,9 @@ func TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees(cur realm, t *te
 
 func TestRevocationRateLimitAndVaultCollection(cur realm, t *testing.T) {
 	resetRealm()
-	testing.SetRealm(testing.NewUserRealm(opAdmin))
+	testing.SetRealm(testing.NewUserRealm(deployer))
 	sendFee(0)
-	InitOperator(cross(cur))
+	TransferOperator(cross(cur), opAdmin)
 
 	testing.SetRealm(testing.NewUserRealm(agentOwner))
 	sendFee(0)

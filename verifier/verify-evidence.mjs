@@ -17,6 +17,8 @@ export const DOMAIN_WARRANT = 'arobi-assurance-warrant-v1';
 export const DOMAIN_RECEIPT = 'arobi-assurance-decision-receipt-v1';
 export const DOMAIN_CLOSURE = 'arobi-assurance-effect-closure-v1';
 export const DOMAIN_ANCHOR = 'arobi-assurance-anchor-v1';
+export const DOMAIN_CHECKPOINT = 'arobi-checkpoint-v1';
+export const DOMAIN_EXEC_RECEIPT = 'arobi-exec-receipt-v1';
 export const ZERO_DIGEST_HEX = '0'.repeat(64);
 
 export function sha256(buf) {
@@ -39,6 +41,12 @@ function encStr(s) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(bytes.length, 0);
   return Buffer.concat([len, bytes]);
+}
+
+function encU32(n) {
+  const buf = Buffer.alloc(4);
+  buf.writeUInt32BE(Number(n) >>> 0, 0);
+  return buf;
 }
 
 function encU64(n) {
@@ -341,6 +349,144 @@ export function verifyEvidenceBundle(b) {
     projectionDigest: projDig,
     receiptLeafHash: rLeaf,
     closureLeafHash: cLeaf,
+    errors,
+  };
+}
+
+/** Canonical byte-for-byte twin of CanonicalCheckpoint.Encode (Experiment E14). */
+export function encodeCanonicalCheckpoint(c) {
+  const chainID = c?.chainID ?? c?.chainId;
+  if (!chainID) throw new Error('checkpoint chainID required');
+  if (BigInt(c.height ?? 0) <= 0n) throw new Error('checkpoint height must be > 0');
+  return Buffer.concat([
+    encStr(DOMAIN_CHECKPOINT),
+    Buffer.from([ENCODING_VERSION]),
+    encStr(chainID),
+    encU64(c.height),
+    fromDigestHex(c.headerHash),
+    fromDigestHex(c.appHash),
+    fromDigestHex(c.validatorsHash),
+    fromDigestHex(c.nextValidatorsHash),
+  ]);
+}
+
+export function checkpointDigest(c) {
+  return sha256(encodeCanonicalCheckpoint(c)).toString('hex');
+}
+
+/** Canonical byte-for-byte twin of ExecutionReceipt.Encode (Experiment E14). */
+export function encodeExecutionReceipt(r) {
+  const chainID = r?.chainID ?? r?.chainId;
+  if (!chainID) throw new Error('receipt chainID required');
+  if (BigInt(r.height ?? 0) <= 0n) throw new Error('receipt height must be > 0');
+  if (!r.caller || !r.contract) throw new Error('receipt caller and contract required');
+  return Buffer.concat([
+    encStr(DOMAIN_EXEC_RECEIPT),
+    Buffer.from([ENCODING_VERSION]),
+    encStr(chainID),
+    encU64(r.height),
+    encU32(r.txIndex),
+    fromDigestHex(r.txHash),
+    encStr(r.caller),
+    encStr(r.contract),
+    encU64(r.gasUsed),
+    encU32(r.exitCode),
+    fromDigestHex(r.resultHash),
+  ]);
+}
+
+export function execReceiptLeafHash(r) {
+  return leafHash(encodeExecutionReceipt(r)).toString('hex');
+}
+
+/**
+ * Enforces strictly increasing (height, txIndex) order and single-chain membership across
+ * execution receipts, returning their RFC 6962 leaf hashes and Merkle root (Experiment E14).
+ */
+export function buildOrderedReceiptTree(receipts) {
+  if (!Array.isArray(receipts) || receipts.length === 0) {
+    throw new Error('receipt batch cannot be empty');
+  }
+  const chainID = receipts[0]?.chainID ?? receipts[0]?.chainId;
+  if (!chainID) throw new Error('receipt chainID required');
+  const leaves = [];
+  let prevHeight = 0n;
+  let prevTx = -1;
+  for (let i = 0; i < receipts.length; i++) {
+    const rec = receipts[i];
+    const recChain = rec?.chainID ?? rec?.chainId;
+    if (recChain !== chainID) throw new Error('mixed chainID inside receipt batch');
+    const h = BigInt(rec.height);
+    const tx = Number(rec.txIndex);
+    if (i > 0 && (h < prevHeight || (h === prevHeight && tx <= prevTx))) {
+      throw new Error('execution receipts must be in strictly increasing (height, tx_index) order');
+    }
+    leaves.push(execReceiptLeafHash(rec));
+    prevHeight = h;
+    prevTx = tx;
+  }
+  return {
+    chainID,
+    count: leaves.length,
+    leaves,
+    root: merkleTreeHead(leaves),
+  };
+}
+
+/** Independently verify a cross-chain checkpoint and/or strictly-ordered execution receipt batch. */
+export function verifyCrossChainCheckpoint({
+  checkpoint,
+  receipts,
+  expectedCheckpointDigest,
+  expectedReceiptRoot,
+  expectedReceiptsRoot,
+  verifyIndex,
+  targetReceiptIndex,
+  targetProof,
+}) {
+  const errors = [];
+  const expRoot = expectedReceiptRoot ?? expectedReceiptsRoot;
+  const idx = verifyIndex ?? targetReceiptIndex;
+  let computedCheckpointDigest = null;
+  if (checkpoint) {
+    try {
+      computedCheckpointDigest = checkpointDigest(checkpoint);
+      if (expectedCheckpointDigest && computedCheckpointDigest !== expectedCheckpointDigest) {
+        errors.push('checkpoint digest mismatch');
+      }
+    } catch (err) {
+      errors.push(String(err.message || err));
+    }
+  }
+  let tree = null;
+  let inclusionProof = null;
+  let inclusionVerified = null;
+  if (receipts) {
+    try {
+      tree = buildOrderedReceiptTree(receipts);
+      const cpChain = checkpoint?.chainID ?? checkpoint?.chainId;
+      if (checkpoint && tree.chainID !== cpChain) {
+        errors.push('receipt batch chainID does not match checkpoint chainID');
+      }
+      if (expRoot && tree.root !== expRoot) {
+        errors.push('receipt tree root mismatch');
+      }
+      if (Number.isInteger(idx) && idx >= 0 && idx < tree.count) {
+        inclusionProof = targetProof ?? auditPath(idx, tree.leaves);
+        inclusionVerified = verifyInclusion(idx, tree.count, tree.leaves[idx], inclusionProof, expRoot ?? tree.root);
+        if (!inclusionVerified) errors.push('receipt inclusion proof failed');
+      }
+    } catch (err) {
+      errors.push(String(err.message || err));
+    }
+  }
+  return {
+    verified: errors.length === 0,
+    checkpointDigest: computedCheckpointDigest,
+    receiptRoot: tree?.root ?? null,
+    receiptCount: tree?.count ?? 0,
+    inclusionProof,
+    inclusionVerified,
     errors,
   };
 }

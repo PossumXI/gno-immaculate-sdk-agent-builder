@@ -53,7 +53,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(init.result.serverInfo.name, 'immaculate-sdk-agent-mcp');
 
     const list = await client.call('tools/list');
-    assert.equal(list.result.tools.length, 10);
+    assert.equal(list.result.tools.length, 11);
 
     // 1. Seed 1 trusted memory, block a k=1->k=2 cold-start poison injection (E6b), then seed 2nd clean + block post-boot poison.
     const m1 = await client.call('tools/call', {
@@ -167,6 +167,48 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(cons.result.structuredContent.verified, true);
     assert.equal(cons.result.structuredContent.firstRootHex, ok.result.structuredContent.accumulatorRoot);
     assert.equal(cons.result.structuredContent.secondRootHex, deny.result.structuredContent.accumulatorRoot);
+
+    // 7. E14 Cross-chain CanonicalCheckpoint & strictly ordered ExecutionReceipt verification tool.
+    const cpRes = await client.call('tools/call', {
+      name: 'verify_cross_chain_checkpoint',
+      arguments: {
+        checkpoint: {
+          chainId: 'arobi-testnet-1',
+          height: 4200,
+          headerHash: 'a'.repeat(64),
+          appHash: 'b'.repeat(64),
+          validatorsHash: 'c'.repeat(64),
+          nextValidatorsHash: 'd'.repeat(64),
+        },
+        receipts: [
+          {
+            chainId: 'arobi-testnet-1',
+            height: 4200,
+            txIndex: 0,
+            txHash: '1'.repeat(64),
+            caller: 'g1alice',
+            contract: 'wasm/escrow-v1',
+            gasUsed: 125000,
+            exitCode: 0,
+            resultHash: '2'.repeat(64),
+          },
+          {
+            chainId: 'arobi-testnet-1',
+            height: 4200,
+            txIndex: 1,
+            txHash: '3'.repeat(64),
+            caller: 'g1bob',
+            contract: 'wasm/escrow-v1',
+            gasUsed: 98000,
+            exitCode: 0,
+            resultHash: '4'.repeat(64),
+          },
+        ],
+      },
+    });
+    assert.equal(cpRes.result.structuredContent.verified, true);
+    assert.equal(cpRes.result.structuredContent.receiptCount, 2);
+    assert.match(cpRes.result.structuredContent.receiptRoot, /^[0-9a-f]{64}$/);
   } finally {
     client.close();
   }

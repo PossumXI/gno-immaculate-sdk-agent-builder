@@ -8,6 +8,10 @@ import {
   decisionReceiptLeafHash,
   effectClosureLeafHash,
   anchorRecordLeafHash,
+  checkpointDigest,
+  execReceiptLeafHash,
+  buildOrderedReceiptTree,
+  verifyCrossChainCheckpoint,
   merkleTreeHead,
   auditPath,
   verifyInclusion,
@@ -127,4 +131,77 @@ test('verifyEvidenceBundle validates allowed execution and catches forgery', () 
     closureCount: 1,
   });
   assert.match(aLeaf, /^[0-9a-f]{64}$/);
+});
+
+test('E14 cross-chain CanonicalCheckpoint and strictly ordered ExecutionReceipt tree match Gno v1.8.0 golden hashes', () => {
+  const checkpoint = {
+    chainId: 'arobi-testnet-1',
+    height: 4200,
+    headerHash: sha256Hex('hdr-4200'),
+    appHash: sha256Hex('app-4200'),
+    validatorsHash: sha256Hex('val-4200'),
+    nextValidatorsHash: sha256Hex('nval-4200'),
+  };
+  const receipts = [
+    {
+      chainId: 'arobi-testnet-1',
+      height: 4200,
+      txIndex: 0,
+      txHash: sha256Hex('tx-0'),
+      caller: 'g1alice',
+      contract: 'wasm/escrow-v1',
+      gasUsed: 125000,
+      exitCode: 0,
+      resultHash: sha256Hex('res-0'),
+    },
+    {
+      chainId: 'arobi-testnet-1',
+      height: 4200,
+      txIndex: 1,
+      txHash: sha256Hex('tx-1'),
+      caller: 'g1bob',
+      contract: 'wasm/escrow-v1',
+      gasUsed: 98000,
+      exitCode: 0,
+      resultHash: sha256Hex('res-1'),
+    },
+    {
+      chainId: 'arobi-testnet-1',
+      height: 4201,
+      txIndex: 0,
+      txHash: sha256Hex('tx-2'),
+      caller: 'g1carol',
+      contract: 'wasm/govern-v1',
+      gasUsed: 210000,
+      exitCode: 0,
+      resultHash: sha256Hex('res-2'),
+    },
+  ];
+
+  // Exact golden digests verified by Gno v1.8.0 TestE14CrossChainCheckpointAndOrderedReceiptTree
+  const cpDigest = checkpointDigest(checkpoint);
+  const tree = buildOrderedReceiptTree(receipts);
+  const leaf1 = execReceiptLeafHash(receipts[1]);
+  assert.equal(cpDigest, 'e75622556eac5ddfd47a99210a1f8d701ac0511f4eb0ba278541e954fa7b40d9');
+  assert.equal(tree.root, '4f8658ea53439ef542d01aa959fa6bd1a333480d6f81fac00aa166e8c45cd4cb');
+  assert.equal(leaf1, '68943efe05303e4017a85fb37a392fc3ebe52f89933e99682064594f8f70d22b');
+
+  const ok = verifyCrossChainCheckpoint({
+    checkpoint,
+    expectedCheckpointDigest: cpDigest,
+    receipts,
+    expectedReceiptsRoot: tree.root,
+    targetReceiptIndex: 1,
+    targetProof: auditPath(1, tree.leaves),
+  });
+  assert.equal(ok.verified, true);
+
+  // Swapped order must fail closed.
+  const badOrder = verifyCrossChainCheckpoint({
+    checkpoint,
+    expectedCheckpointDigest: cpDigest,
+    receipts: [receipts[1], receipts[0], receipts[2]],
+    expectedReceiptsRoot: tree.root,
+  });
+  assert.equal(badOrder.verified, false);
 });

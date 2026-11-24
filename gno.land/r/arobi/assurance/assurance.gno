@@ -6,9 +6,10 @@
 // subscribe to the Pro Agent Plan in GNOT for 1-block high-frequency anchoring, and let
 // any third party verify RFC 6962 inclusion proofs on-chain or offline.
 //
-// Settlement privacy: service fees are enforced on-chain in GNOT while operator
-// settlement routing is configured privately at deployment time and never hardcoded or
-// publicly disclosed in source code, chain events, or gnoweb pages.
+// Settlement: service fees are enforced on-chain in GNOT. The deployer becomes operator
+// atomically inside init() during deployment (no post-deploy claim race). No payout address
+// is hardcoded, rendered in gnoweb, or emitted in events; on a public chain, realm state and
+// bank transfers are publicly inspectable.
 package assurance
 
 import (
@@ -60,7 +61,9 @@ var (
 	anchorFeeUgnot      int64 = 1000     // 0.001 GNOT per anchored evidence checkpoint
 	agentPlanPriceUgnot int64 = 10000000 // 10 GNOT per 30-day Pro Agent Plan
 
-	// Private operator & opaque settlement vault (never printed in Render or emitted in events).
+	// Operator and settlement sink. Render and events do not print them; on a public chain
+	// realm state and bank transfers remain publicly inspectable. deployer is bound once in init().
+	deployer           address
 	operator           address
 	settlementSink     address
 	accruedServiceFees int64
@@ -83,19 +86,21 @@ var (
 	demoLastRoot         string
 )
 
-// ── Private Operator & Settlement Configuration ──────────────────────────────
+// ── Operator & Settlement Configuration ──────────────────────────────────────
 
-// InitOperator claims one-time deployer operator control after package deployment.
-func InitOperator(cur realm) {
-	prev := cur.Previous()
-	if !prev.IsUserCall() {
-		panic("init operator with a direct user call")
-	}
-	if operator != "" {
-		panic("operator already initialized")
-	}
-	operator = prev.Address()
+// init binds the deploying account as deployer and operator atomically inside the
+// deployment transaction itself, closing any post-deploy operator front-running window.
+func init() {
+	initOperatorFromDeployment()
 }
+
+func initOperatorFromDeployment() {
+	deployer = unsafe.OriginCaller()
+	operator = deployer
+}
+
+// Operator returns the current operator address.
+func Operator() address { return operator }
 
 // TransferOperator transfers operator control to a new address (operator only).
 func TransferOperator(cur realm, next address) {

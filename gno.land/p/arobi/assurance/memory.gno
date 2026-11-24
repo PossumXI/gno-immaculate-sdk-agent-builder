@@ -121,9 +121,11 @@ type MemoryVaultConfig struct {
 	MaxActiveRecords         int     // bounded capacity for deterministic GnoVM gas (default 256)
 	EnableColdStartGuard     bool    // guards k=1->k=2 via variance-calibrated tau^2 pairwise cosine (Experiment E6b)
 	GenesisAnchor            []int64 // optional owner-pinned domain unit anchor guarding k=1..2 at full tau (Experiment E6b)
-	ConeRef                  []int64 // optional anisotropic common-cone reference for fixed-point CAR debiasing (Experiment E9)
-	ConeWeightFixed          int64   // CAR cone subtraction weight in [0, Scale] (e.g. 780000 = 0.78; Experiment E9)
-	DispersionGateFixed      int64   // dense margin floor below which lexical RRF boosts 2x (default 80000 when CAR active)
+	ConeRef                  []int64   // optional anisotropic common-cone reference for fixed-point CAR debiasing (Experiment E9)
+	ConeWeightFixed          int64     // CAR cone subtraction weight in [0, Scale] (e.g. 780000 = 0.78; Experiment E9)
+	DispersionGateFixed      int64     // dense margin floor below which lexical RRF boosts 2x (default 80000 when CAR active)
+	EnableHubnessNorm        bool      // z-score normalizes dense similarity per record against calibration block (Experiment E13a)
+	HubnessMinStdFixed       int64     // std floor for HubnessNormalizeFixed (default 50000 = 0.05)
 }
 
 // MemoryVault is a consensus-safe, poison-resistant episodic/semantic memory store for Gno
@@ -136,6 +138,7 @@ type MemoryVault struct {
 	centroidSum   []int64
 	genesisUnit   []int64
 	coneUnit      []int64
+	hubCalUnits   [][]int64
 	active        []MemoryRecord
 	quarantined   []MemoryRecord
 	vaultRootHash [32]byte
@@ -180,6 +183,25 @@ func (v *MemoryVault) prepareUnit(vec []int64) ([]int64, error) {
 		return signals.CommonAverageReferenceDebiasFixed(vec, v.coneUnit, v.cfg.ConeWeightFixed)
 	}
 	return signals.UnitNormalizeFixed(vec)
+}
+
+// SetHubnessCalibration registers a calibration query block and enables hubness z-score
+// normalization during RetrieveTopK (Experiment E13a, Radovanovic et al. JMLR 2010 / Utah P3).
+func (v *MemoryVault) SetHubnessCalibration(calibrationQueries [][]int64, minStdFixed int64) error {
+	units := make([][]int64, 0, len(calibrationQueries))
+	for _, q := range calibrationQueries {
+		u, err := v.prepareUnit(q)
+		if err != nil {
+			return err
+		}
+		units = append(units, u)
+	}
+	v.hubCalUnits = units
+	v.cfg.EnableHubnessNorm = true
+	if minStdFixed > 0 {
+		v.cfg.HubnessMinStdFixed = minStdFixed
+	}
+	return nil
 }
 
 // ActiveCount returns the number of admitted trusted memory records.
@@ -433,19 +455,44 @@ func (v *MemoryVault) RetrieveTopK(
 		}, nil
 	}
 
-	// Compute dense and lexical scores for every active memory.
+	// Compute dense (optionally hubness z-score normalized, Experiment E13a) and lexical scores.
 	denseScores := make([]int64, n)
 	lexScores := make([]int64, n)
 	denseOrder := make([]int, n)
 	lexOrder := make([]int, n)
 
+	var peerUnits [][]int64
+	if v.cfg.EnableHubnessNorm && len(v.hubCalUnits) == 0 && n >= 4 {
+		peerUnits = v.ActiveEmbeddings()
+	}
+
 	for i := 0; i < n; i++ {
 		rec := v.active[i]
-		cos, cErr := CosineFixed(qUnit, rec.UnitVec)
-		if cErr != nil {
-			return nil, MemoryRecallProof{}, cErr
+		var dense int64
+		if v.cfg.EnableHubnessNorm && (len(v.hubCalUnits) > 0 || len(peerUnits) >= 4) {
+			cal := v.hubCalUnits
+			excludeIdx := -1
+			if len(cal) == 0 {
+				cal = peerUnits
+				excludeIdx = i
+			}
+			stats, sErr := signals.FitHubStatsFixed(cal, rec.UnitVec, excludeIdx, v.cfg.HubnessMinStdFixed)
+			if sErr != nil {
+				return nil, MemoryRecallProof{}, sErr
+			}
+			zScore, zErr := signals.HubNormalizeScoreFixed(qUnit, rec.UnitVec, stats, v.cfg.HubnessMinStdFixed)
+			if zErr != nil {
+				return nil, MemoryRecallProof{}, zErr
+			}
+			dense = signals.MulFixed(zScore, rec.SalienceFixed)
+		} else {
+			cos, cErr := CosineFixed(qUnit, rec.UnitVec)
+			if cErr != nil {
+				return nil, MemoryRecallProof{}, cErr
+			}
+			dense = signals.MulFixed(cos, rec.SalienceFixed)
 		}
-		denseScores[i] = signals.MulFixed(cos, rec.SalienceFixed)
+		denseScores[i] = dense
 		lexScores[i] = lexicalOverlapFixed(qTerms, rec.Terms)
 		denseOrder[i] = i
 		lexOrder[i] = i

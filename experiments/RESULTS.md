@@ -1,6 +1,6 @@
 # Scientific Evaluation Results — Immaculate SDK Agent Builder
 
-**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-23T21:43:41.041Z`
+**Protocol:** [PROTOCOL.md](PROTOCOL.md) | **Seed:** `20261123` | **Generated:** `2026-11-24T01:46:39.285Z`
 
 ---
 
@@ -31,6 +31,10 @@
 | **H11a** AR(1) Innovation Prewhitening (`ρ=0.70`) | >= 70% cut in autocorrelated clean FPR (<= 10%) with >= 95% shift TPR | **PASS** |
 | **H11b** Fixed-Point Youden-J & ROC-AUC | MAE < 1e-5 vs IEEE-754 float64 across 200 calibration batches | **PASS** |
 | **H12a** RFC 6962 §2.1.4.2 Consistency Proofs | 100% pass & tamper rejection across all 2,080 prefix pairs (1<=N1<=N2<=64) + N=250 | **PASS** |
+| **H13a** Hubness Z-Score Calibration | >= 95% Top-1 recall & <= 5% hub hijack (vs <25% raw cosine) + >= 98% clean recall | **PASS** |
+| **H13b** Fixed-Point Kalman RW Riccati | Gain err <= 1e-5, state err <= 1e-3, RMSE cut >= 35% vs raw & beats mismatched EWMAs | **PASS** |
+| **H14a** Cross-Chain Checkpoint & Receipt Parity | 100/100 ordered batches verified & 3/3 live Gno v1.8.0 ↔ JS golden digest/root parity | **PASS** |
+| **H14b** Adversarial Reorder & Tamper Rejection | 500/500 swapped, duplicate, mixed-chain & mutated receipts/headers rejected | **PASS** |
 
 ---
 
@@ -71,7 +75,7 @@ Measured directly via `gno test -v` on Gno v1.8.0:
 
 - **Single Governed Action (`Agent.Execute` + Warrant + Receipt + Closure + RFC 6962 Proofs):** `2,659,102` gas
 - **Single Adaptive Action (`HampelCusum DriftGuard` + 8D `CoherenceGuard` + `Agent.Execute` + Proofs):** `4,975,412` gas
-- **Familiar + 8-Record Governed MemoryVault Ingest + Hybrid RRF Top-3 Recall + Capability Action:** `14,548,452` gas
+- **Familiar + 8-Record Governed MemoryVault Ingest + Hybrid RRF Top-3 Recall + Capability Action:** `14,565,159` gas
 
 | Accumulator Leaves (N) | Max RFC 6962 Proof Hashes | Cumulative Append + Proof + Verify Gas | Avg Gas / Leaf |
 | ---: | ---: | ---: | ---: |
@@ -177,3 +181,27 @@ Cross-referenced external discrete non-local dynamics concepts (Johannes Geisen 
 
 - **Exhaustive Prefix Pairs ($1 \le N_1 \le N_2 \le 64$):** `2080/2080` valid consistency proofs verified (`100%`), `2080/2080` tampered proofs rejected (`100%`), max proof length = `7` hashes.
 - **Large Tree Transition ($N_1 = 103 \to N_2 = 250$):** Verified = `true` in **`9` hashes**.
+
+---
+
+## Experiment E13 — Hubness Z-Score Calibration & Steady-State Scalar Random-Walk Kalman Filter (Pure Fixed-Point Gno)
+
+### E13a — Universal-Hub Retrieval Hijack Suppression (300 Episodes in $\mathbb{R}^{16}$, Cross-Ref Radovanović et al. JMLR 2010 / Arobi Labs P3)
+
+| Retrieval Scorer | Top-1 Exact-Target Recall (w/ Hub) | Universal-Hub Hijack Rate | Clean No-Hub Top-1 Recall |
+| --- | ---: | ---: | ---: |
+| Raw Unit Cosine | 0% | 100% | — |
+| **Fixed-Point `HubnessNormalizeFixed`** | **100%** | **0%** | **100%** |
+
+### E13b — Multi-Regime Scalar Random-Walk Kalman Riccati Filter (48,000 Updates across $q/r \in \{0.01, 0.10, 1.00\}$, Cross-Ref Kalman 1960 / Wu et al. NeurIPS 2002 / Arobi Labs P6)
+
+- **Fixed-Point Riccati Gain Fidelity (53 SNR pairs):** `maxGainAbsError = 0.000001771` (`<= 1e-5`); **48,000-Step Trajectory Fidelity:** `maxStateAbsError = 0.00001671` (`<= 1e-3`).
+- **Multi-Regime Mean RMSE:** Raw = `0.9965`, Fixed EWMA (`α=0.05`) = `1.4526`, Fixed EWMA (`α=0.50`) = `0.6699`, **Fixed-Point `KalmanRWTracker` = `0.5741` (`-42.4%` vs raw, matching float64 `0.5741`)**.
+
+---
+
+## Experiment E14 — Canonical Cross-Chain Checkpoint & Strictly-Ordered Execution Receipt Commitments
+
+- **Live Gno v1.8.0 ↔ Node.js Golden Parity:** `3/3` exact matches (`E14_GOLDEN_CHECKPOINT_DIGEST = e75622556eac5ddfd47a99210a1f8d701ac0511f4eb0ba278541e954fa7b40d9`, `E14_GOLDEN_RECEIPT_ROOT = 4f8658ea53439ef542d01aa959fa6bd1a333480d6f81fac00aa166e8c45cd4cb`).
+- **Valid Ordered Receipt Batches:** `100/100` verified (`100%`).
+- **Adversarial Mutations Rejected (swapped order, duplicate `(height, txIndex)`, mixed `chainID`, mutated gas/exit/result/header):** `500/500` rejected (`100%`, `0` false accepts).

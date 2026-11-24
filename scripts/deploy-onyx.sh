@@ -7,8 +7,8 @@
 # - If [namespace] is omitted, defaults to the deployer key's g1... address
 #   (Gno.land allows deploying directly under gno.land/p/<g1addr>/... and gno.land/r/<g1addr>/...
 #    without needing a pre-registered vanity username).
-# - NEVER embeds any private keys or payout addresses; after deployment, run InitOperator
-#   and SetSettlementSink privately from your operator wallet.
+# - NEVER embeds any private keys or payout addresses; the deploying account becomes
+#   operator atomically inside init() during addpkg, and may configure SetSettlementSink afterwards.
 set -euo pipefail
 
 KEY_NAME="${1:?Usage: bash scripts/deploy-onyx.sh <testnet-key-name> [namespace]}"
@@ -70,6 +70,6 @@ echo ""
 echo "=== Deployed Immaculate SDK Agent Builder to Onyx ($CHAIN_ID) ==="
 echo "Explorer: https://onyx.testnets.gno.land/r/${NAMESPACE}/assurance"
 echo ""
-echo "Next (private operator initialization — never commit payout addresses):"
-echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance --func InitOperator --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 2000000 --broadcast $KEY_NAME"
+echo "Next ($KEY_NAME is already the operator, bound in init() during deployment; never commit payout addresses):"
+echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance --func SetSettlementSink --args <sink-address> --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 2000000 --broadcast $KEY_NAME"
 echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance --func RunDemoAction --args summarize --args doc:1 --args hello --args 0 --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 5000000 --broadcast $KEY_NAME"

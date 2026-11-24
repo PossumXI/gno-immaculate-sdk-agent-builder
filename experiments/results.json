@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T21:43:41.041Z",
+  "generatedAt": "2026-11-24T01:46:39.285Z",
   "seed": 20261123,
   "E1_fixedPointFidelity": {
     "primitives": {
@@ -45,7 +45,10 @@
         "GOLDEN_WARRANT": "1a409b175eac0180b369de569da1719d30475a2cd35ef4fb6b84bbda4bd56f90",
         "GOLDEN_RECEIPT_LEAF": "867616e15be829fdc6c6772d3082166d52d4560e028f748638427037d7957111",
         "GOLDEN_CLOSURE_LEAF": "5252817e43e16c47f303c9868ca655925d2124890079f4019b8e2d6b33794060",
-        "GOLDEN_ROOT": "0063b52374e4586986e90d50fd5b6cdd3615a94b63d98cd639fa1ee771555443"
+        "GOLDEN_ROOT": "0063b52374e4586986e90d50fd5b6cdd3615a94b63d98cd639fa1ee771555443",
+        "E14_GOLDEN_CHECKPOINT_DIGEST": "e75622556eac5ddfd47a99210a1f8d701ac0511f4eb0ba278541e954fa7b40d9",
+        "E14_GOLDEN_RECEIPT_ROOT": "4f8658ea53439ef542d01aa959fa6bd1a333480d6f81fac00aa166e8c45cd4cb",
+        "E14_GOLDEN_RECEIPT_LEAF1": "68943efe05303e4017a85fb37a392fc3ebe52f89933e99682064594f8f70d22b"
       }
     },
     "verdicts": {
@@ -124,6 +127,8 @@
   },
   "E3_gnovmGasScaling": {
     "gasByTest": {
+      "p/arobi/signals::TestKalmanRWGainFixedAndTracker": 523900,
+      "p/arobi/signals::TestHubnessNormalizeFixedSuppressesUniversalHub": 1981491,
       "p/arobi/signals::TestFixedPointMathAccuracy": 873623,
       "p/arobi/signals::TestRobustSmootherRemovesSpikesAndMatchesBatchCausally": 10367298,
       "p/arobi/signals::TestDriftDetectorsCatchShiftWhileHampelCusumIgnoresSingleSpike": 11673525,
@@ -137,12 +142,12 @@
       "p/arobi/signals::TestBenchClassicalUnitNormalizeCos100PairsGas": 41781999,
       "p/arobi/assurance::TestAdaptiveDriftAndCoherenceCircuitBreaker": 65430602,
       "p/arobi/assurance::TestMultiAgentDelegatedWarrantAttenuation": 6434215,
-      "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68907683,
+      "p/arobi/assurance::TestGasScalingAccumulator250Leaves": 68908161,
       "p/arobi/assurance::TestAccumulatorRFC6962ProofsAndTamperRejection": 10632310,
       "p/arobi/assurance::TestGovernedAgentLifecycleProducesVerifiableEvidenceOutOfTheBox": 12771854,
       "p/arobi/assurance::TestFailClosedKillSwitchOverspendAndTamperDetection": 4579478,
       "p/arobi/assurance::TestFluentAgentBuilderProducesVerifiableEvidence": 5922320,
-      "p/arobi/assurance::TestAccumulatorRFC6962ConsistencyProofsAndAdaptiveOpacityAntipodalWiring": 120810591,
+      "p/arobi/assurance::TestAccumulatorRFC6962ConsistencyProofsAndAdaptiveOpacityAntipodalWiring": 120811069,
       "p/arobi/assurance::TestBenchSingleGovernedActionGas": 2659102,
       "p/arobi/assurance::TestBenchAdaptiveDriftAndCoherenceSingleActionGas": 4975412,
       "p/arobi/assurance::TestBenchAccumulatorScale10": 1462219,
@@ -150,14 +155,18 @@
       "p/arobi/assurance::TestBenchAccumulatorScale100": 12022205,
       "p/arobi/assurance::TestBenchAccumulatorScale250": 32636865,
       "p/arobi/assurance::TestCrossLanguageGoldenVectorParity": 1885735,
-      "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9930790,
-      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 14025748,
+      "p/arobi/assurance::TestE13MemoryVaultHubnessNormalizationRescuesRecall": 7592884,
+      "p/arobi/assurance::TestE14CrossChainCheckpointAndOrderedReceiptTree": 2309427,
+      "p/arobi/assurance::TestMemoryVaultSphericalQuarantineAndHybridRRFRetrieval": 9938322,
+      "p/arobi/assurance::TestFamiliarCapabilitiesWilsonTrustPacingAndDelegation": 14037142,
       "p/arobi/assurance::TestMemoryVaultGeometricMedianBatchPurgeAndTrustAutoHalt": 11910199,
-      "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14548452,
-      "p/arobi/assurance::TestMemoryVaultColdStartGenesisAnchorAndAnisotropicCARDebiasing": 9361888,
-      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56365756,
-      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 11153716,
-      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42529895,
+      "p/arobi/assurance::TestBenchFamiliarMemoryAndCapabilityGas": 14565159,
+      "p/arobi/assurance::TestMemoryVaultColdStartGenesisAnchorAndAnisotropicCARDebiasing": 9367585,
+      "r/arobi/assurance::TestEndToEndAgentSDKProducesEvidenceAndAnchorsWithGnotFees": 56459667,
+      "r/arobi/assurance::TestRevocationRateLimitAndVaultCollection": 11247627,
+      "r/arobi/assurance::TestLiveOnChainDemoAgent": 42623023,
+      "r/arobi/assurance::TestOperatorIsTheDeployerAndAStrangerCannotTakeIt": 1902644,
+      "r/arobi/assurance::TestPaymentFunctionsRefuseCodeRealmCallers": 3284679,
       "p/arobi/examples::TestDeFiTreasuryAgentEndToEnd": 29564210,
       "p/arobi/examples::TestMultiAgentDelegationEndToEnd": 6033013
     },
@@ -186,7 +195,7 @@
     "singleActionGas": {
       "governedActionWithProofs": 2659102,
       "adaptiveDriftAndCoherenceAction": 4975412,
-      "familiarMemoryAndCapability": 14548452
+      "familiarMemoryAndCapability": 14565159
     },
     "verdicts": {
       "H3_logarithmic_proof_and_bounded_gas": "PASS"
@@ -220,7 +229,7 @@
         "poisonQuarantineTPR_pct": 100
       }
     },
-    "familiarMemoryAndCapabilityGas": 14548452,
+    "familiarMemoryAndCapabilityGas": 14565159,
     "verdicts": {
       "H4a_poison_quarantine_ge_95pct_and_contamination_cut_ge_90pct": "PASS",
       "H4b_hybrid_rrf_clean_top1_beats_dense_and_stays_poison_free": "PASS",
@@ -412,6 +421,99 @@
     },
     "verdicts": {
       "H12a_100pct_rfc6962_consistency_proof_verification_and_tamper_rejection": "PASS"
+    }
+  },
+  "E13_hubnessCalibrationAndKalmanRW": {
+    "hubnessE13a": {
+      "episodes": 300,
+      "rawCosineTop1Recall_pct": 0,
+      "rawCosineHubHijack_pct": 100,
+      "hubnessNormTop1Recall_pct": 100,
+      "hubnessNormHubHijack_pct": 0,
+      "hubnessNormCleanNoHubTop1Recall_pct": 100
+    },
+    "kalmanE13b": {
+      "totalUpdates": 48000,
+      "maxGainAbsError": 0.000001771,
+      "maxStateAbsError": 0.00001671,
+      "multiRegimeMeanRMSE": {
+        "rawObservation": 0.9965,
+        "ewmaAlpha005": 1.4526,
+        "ewmaAlpha050": 0.6699,
+        "kalmanFixed": 0.5741,
+        "kalmanFloat64": 0.5741,
+        "rmseReductionVsRaw_pct": 42.4
+      },
+      "regimes": {
+        "low_snr_q0.01": {
+          "q": 0.01,
+          "r": 1,
+          "gainFloat64": 0.095125,
+          "gainFixed": 0.095124,
+          "rawRMSE": 0.9984,
+          "ewma005RMSE": 0.5052,
+          "ewma050RMSE": 0.5925,
+          "kalmanFixedRMSE": 0.4126,
+          "kalmanFloat64RMSE": 0.4126
+        },
+        "mid_snr_q0.10": {
+          "q": 0.1,
+          "r": 1,
+          "gainFloat64": 0.270156,
+          "gainFixed": 0.270156,
+          "rawRMSE": 0.9973,
+          "ewma005RMSE": 0.9812,
+          "ewma050RMSE": 0.6028,
+          "kalmanFixedRMSE": 0.5241,
+          "kalmanFloat64RMSE": 0.5241
+        },
+        "high_snr_q1.00": {
+          "q": 1,
+          "r": 1,
+          "gainFloat64": 0.618034,
+          "gainFixed": 0.618033,
+          "rawRMSE": 0.9937,
+          "ewma005RMSE": 2.8714,
+          "ewma050RMSE": 0.8145,
+          "kalmanFixedRMSE": 0.7856,
+          "kalmanFloat64RMSE": 0.7856
+        }
+      }
+    },
+    "verdicts": {
+      "H13a_hubness_zscore_rescues_recall_ge_95pct_and_cuts_hijack_le_5pct": "PASS",
+      "H13b_fixed_point_kalman_riccati_optimality_and_fidelity": "PASS"
+    }
+  },
+  "E14_crossChainCheckpointAndOrderedReceipts": {
+    "gnoJsGoldenParity": {
+      "matchedFields": 3,
+      "totalFields": 3,
+      "checks": {
+        "E14_GOLDEN_CHECKPOINT_DIGEST": true,
+        "E14_GOLDEN_RECEIPT_ROOT": true,
+        "E14_GOLDEN_RECEIPT_LEAF1": true
+      },
+      "checkpointDigest": "e75622556eac5ddfd47a99210a1f8d701ac0511f4eb0ba278541e954fa7b40d9",
+      "receiptRoot": "4f8658ea53439ef542d01aa959fa6bd1a333480d6f81fac00aa166e8c45cd4cb",
+      "receiptLeaf1": "68943efe05303e4017a85fb37a392fc3ebe52f89933e99682064594f8f70d22b"
+    },
+    "validBatchesVerified": 100,
+    "validBatchesTotal": 100,
+    "adversarialMutationsRejected": 500,
+    "adversarialMutationsTotal": 500,
+    "attackBreakdown": {
+      "swappedOrder": 72,
+      "duplicatePair": 72,
+      "mixedChainId": 72,
+      "alteredGasUsed": 71,
+      "alteredExitCode": 71,
+      "alteredResultHash": 71,
+      "alteredHeaderHash": 71
+    },
+    "verdicts": {
+      "H14a_strict_ordering_and_gno_js_golden_parity": "PASS",
+      "H14b_100pct_adversarial_tamper_and_reorder_rejection": "PASS"
     }
   }
 }
