@@ -39,6 +39,25 @@ gnokey list
 
 ---
 
+### Reproduce everything in one command
+
+`scripts/reproduce.sh` runs all three CI stages — Node module tests, `gno lint` +
+unit tests, and the pre-registered E1–E14 experiments — then prints a summary and
+exits non-zero on any failure. It finds a built `gno` via `GNO_BIN`, `GNO_SRC`
+or `PATH`, and otherwise clones and builds Gno `v1.8.0` itself.
+
+```bash
+bash scripts/reproduce.sh
+```
+
+Or in a container, with no local toolchain at all:
+
+```bash
+docker build -t immaculate-verify . && docker run --rm immaculate-verify
+```
+
+---
+
 ## What Makes This Different
 
 Most agent frameworks log mutable text after an action has already fired — and standard blockchain contracts rely only on static spend caps that miss stealth prompt-injection drift, break under oracle/telemetry spikes, and offer zero defense against cross-session memory poisoning.

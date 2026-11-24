@@ -1,0 +1,5 @@
+.git
+.gno-src
+node_modules
+Dockerfile
+.dockerignore
