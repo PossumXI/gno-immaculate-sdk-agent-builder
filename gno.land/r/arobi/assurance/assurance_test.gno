@@ -41,7 +41,7 @@ func resetRealm() {
 	agentSeq = avl.NewTree()
 	anchors = avl.NewTree()
 	anchorCount = 0
-	globalAcc = sdk.Accumulator{}
+	globalAcc = sdk.LedgerAccumulator{}
 	demoLastOut = ""
 	demoLastErr = ""
 	demoLastRoot = ""

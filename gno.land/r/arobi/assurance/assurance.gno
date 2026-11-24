@@ -75,7 +75,7 @@ var (
 	agentSeq    = avl.NewTree() // anchorKey(seq) -> agentID, in registration order
 	anchors     = avl.NewTree() // anchorKey(id) -> sdk.AnchorRecord
 	anchorCount uint64
-	globalAcc   sdk.Accumulator
+	globalAcc   sdk.LedgerAccumulator // grows with every anchor across transactions: leaves in a tree
 
 	// Built-in interactive governed demo agent & Familiar powered directly by gno.land/p/arobi/assurance.
 	demoAgent            *sdk.Agent

@@ -15,10 +15,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"strconv"
-	"strings"
-
-	"gno.land/p/nt/avl/v0"
 )
 
 var (
@@ -86,34 +82,9 @@ func ZeroDigest() [32]byte {
 // Accumulator is an append-only RFC 6962 / RFC 9162 Merkle tree over 32-byte leaf hashes.
 // It maintains a compact power-of-two frontier for O(log n) Root() updates while keeping
 // all leaves so historical inclusion proofs can be reconstructed at any past tree size.
-//
-// The leaves live in an AVL tree keyed by index, not a slice. A slice's backing array is one
-// stored object, loaded and saved again in full on every append, so an append to a realm's
-// accumulator cost gas in proportion to its whole history. A tree append writes O(log n) small
-// nodes, so it costs about the same at any size. The zero value is an empty accumulator.
 type Accumulator struct {
-	leaves   avl.Tree // leafKey(index) -> [32]byte
-	size     uint64
+	leaves   [][32]byte
 	frontier []subtree
-}
-
-// leafKey is the index in fixed-width decimal, so the tree's key order is index order.
-func leafKey(index uint64) string {
-	s := strconv.FormatUint(index, 10)
-	return strings.Repeat("0", 20-len(s)) + s
-}
-
-// prefix returns the first n leaves, in index order.
-func (a *Accumulator) prefix(n uint64) [][32]byte {
-	out := make([][32]byte, 0, n)
-	if n == 0 {
-		return out
-	}
-	a.leaves.Iterate(leafKey(0), leafKey(n), func(_ string, v any) bool {
-		out = append(out, v.([32]byte))
-		return false
-	})
-	return out
 }
 
 type subtree struct {
@@ -123,14 +94,13 @@ type subtree struct {
 
 // Size returns the number of appended leaves.
 func (a *Accumulator) Size() uint64 {
-	return a.size
+	return uint64(len(a.leaves))
 }
 
 // Append adds a leaf hash and returns its 0-based index.
 func (a *Accumulator) Append(leaf [32]byte) uint64 {
-	index := a.size
-	a.leaves.Set(leafKey(index), leaf)
-	a.size++
+	index := uint64(len(a.leaves))
+	a.leaves = append(a.leaves, leaf)
 	a.frontier = append(a.frontier, subtree{hash: leaf, size: 1})
 	for len(a.frontier) >= 2 {
 		n := len(a.frontier)
@@ -162,26 +132,26 @@ func (a *Accumulator) Root() [32]byte {
 
 // Leaf returns the leaf hash at index.
 func (a *Accumulator) Leaf(index uint64) ([32]byte, bool) {
-	if index >= a.size {
+	if index >= uint64(len(a.leaves)) {
 		return [32]byte{}, false
 	}
-	return a.leaves.Get(leafKey(index)).([32]byte), true
+	return a.leaves[index], true
 }
 
 // RootAt returns the Merkle Tree Head over the first size leaves.
 func (a *Accumulator) RootAt(size uint64) ([32]byte, error) {
-	if size > a.size {
+	if size > uint64(len(a.leaves)) {
 		return [32]byte{}, errProofRange
 	}
-	return mth(a.prefix(size)), nil
+	return mth(a.leaves[:size]), nil
 }
 
 // Proof returns the RFC 6962 audit path for leaf index in a tree of size leaves.
 func (a *Accumulator) Proof(index, size uint64) ([][32]byte, error) {
-	if index >= size || size > a.size {
+	if index >= size || size > uint64(len(a.leaves)) {
 		return nil, errProofRange
 	}
-	return auditPath(int(index), a.prefix(size)), nil
+	return auditPath(int(index), a.leaves[:size]), nil
 }
 
 // VerifyInclusion verifies an RFC 9162 section 2.1.3.2 inclusion proof against root.
@@ -248,10 +218,10 @@ func splitPoint(n int) int {
 // consistency proof (SUBPROOF) showing that the first `first` leaves form an exact
 // append-only prefix of the first `second` leaves.
 func (a *Accumulator) ConsistencyProof(first, second uint64) ([][32]byte, error) {
-	if first == 0 || first > second || second > a.size {
+	if first == 0 || first > second || second > uint64(len(a.leaves)) {
 		return nil, errProofRange
 	}
-	return subproof(int(first), a.prefix(second), true), nil
+	return subproof(int(first), a.leaves[:second], true), nil
 }
 
 func subproof(m int, leaves [][32]byte, startFromOldRoot bool) [][32]byte {
