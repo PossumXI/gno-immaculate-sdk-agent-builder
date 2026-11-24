@@ -27,6 +27,7 @@ import {
   merkleTreeHead,
   sha256Hex,
 } from '../verifier/verify-evidence.mjs';
+import { parseEffectJson, verifyEffect } from '../verifier/verify-effect.mjs';
 
 const SERVER_INFO = {
   name: 'immaculate-sdk-agent-mcp',
@@ -244,6 +245,17 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'verify_effect_life',
+    description: 'Verify one effect\'s whole life offline, from gno.land/r/arobi/effects EffectJSON(id) (the JSON, or gnokey qeval output): the spec digest, every RFC 6962 leaf, the hash chain, every lifecycle transition and every computed close.',
+    inputSchema: {
+      type: 'object',
+      required: ['effect'],
+      properties: {
+        effect: { description: 'the EffectJSON document, or its text as gnokey query vm/qeval prints it' },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args = {}) {
@@ -448,6 +460,15 @@ function handleToolCall(name, args = {}) {
         expectedReceiptRoot: args.expectedReceiptRoot,
         verifyIndex: args.verifyIndex,
       });
+    }
+
+    case 'verify_effect_life': {
+      try {
+        const doc = typeof args.effect === 'string' ? parseEffectJson(args.effect) : args.effect;
+        return { verified: true, ...verifyEffect(doc) };
+      } catch (e) {
+        return { verified: false, reason: e.message };
+      }
     }
 
     default:

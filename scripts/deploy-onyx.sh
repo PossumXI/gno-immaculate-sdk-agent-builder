@@ -76,6 +76,7 @@ deploy_pkg() {
 deploy_pkg p signals
 deploy_pkg p assurance
 deploy_pkg r assurance
+deploy_pkg r effects
 
 echo ""
 [ "$DRY_RUN" = 1 ] && { echo "=== Dry run: nothing was broadcast ==="; exit 0; }

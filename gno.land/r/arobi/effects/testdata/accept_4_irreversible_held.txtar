@@ -1,0 +1,43 @@
+# Acceptance 4: an IRREVERSIBLE effect with no recorded human approval is refused at the start, and the refusal
+# leaves no record. With the owner's approval, given as a separate call for exactly that key and postcondition, it
+# starts, and the approval is used once.
+# scripts/run-effects-txtars.sh adds the loadpkg lines and the packages.
+
+adduser cleanup 100000000000ugnot
+
+gnoland start
+
+gnokey maketx call -pkgpath gno.land/r/arobi/assurance -func RegisterAgent -args worker-1 -args 'Worker 1' -args 1111111111111111111111111111111111111111111111111111111111111111 -args '' -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout OK!
+
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args mail:customers -args notice-1 -args 1 -args IRREVERSIBLE -args '' -args m1 -args sent -args 10 -args $cleanup_user_addr -args 0 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stderr 'needs a recorded human approval'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectCount()'
+stdout '\(0 uint64\)'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.OpenEffects()'
+stdout '\("\[\]" string\)'
+
+# An approval for another postcondition does not open it either.
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func ApproveEffect -args worker-1 -args mail:customers -args 2222222222222222222222222222222222222222222222222222222222222222 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout '\(1 uint64\)'
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args mail:customers -args notice-1 -args 1 -args IRREVERSIBLE -args '' -args m1 -args sent -args 10 -args $cleanup_user_addr -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stderr 'another agent, key or postcondition'
+
+# The owner approves exactly this effect: key mail:customers, postcondition m1 holding "sent" (the digest below is
+# what DemoDigest returns for it). Then it starts, once.
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.DemoDigest("m1", "sent")'
+stdout '\("f67be18586311abf25cc20d8848583e87bdbda572a4d62b8432e964c90607b5c" string\)'
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func ApproveEffect -args worker-1 -args mail:customers -args f67be18586311abf25cc20d8848583e87bdbda572a4d62b8432e964c90607b5c -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout '\(2 uint64\)'
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args mail:customers -args notice-1 -args 1 -args IRREVERSIBLE -args '' -args m1 -args sent -args 10 -args $cleanup_user_addr -args 2 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout '\(1 uint64\)'
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 1 -args 1 -args 1 -args sent -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout OK!
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CloseDemoEffect -args 1 -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout '\("COMMITTED" string\)'
+
+# Used once: a second start under the same approval is refused, and nothing undoes an IRREVERSIBLE effect.
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args mail:customers -args notice-2 -args 1 -args IRREVERSIBLE -args '' -args m1 -args sent -args 10 -args $cleanup_user_addr -args 2 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stderr 'approval 2 is used'
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CompensateDemo -args 1 -args 10 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stderr 'IRREVERSIBLE'

@@ -140,15 +140,63 @@ The live Onyx package and realm paths used a deployer-address namespace (`gno.la
 | `gno.land/p/arobi/signals` | Pure integer (`Scale = 1,000,000`) deterministic signal assurance primitives: `RobustSmoother` (Hampel+EMA), `CausalMedian`, `CusumDetector`, `PageHinkleyDetector`, `HampelCusumDetector`, `OpacityAwareHampelCusumDetector`, `AR1PrewhitenedHampelCusumDetector`, `KalmanRWGainFixed` / `KalmanRWTracker`, `MeanResultantLengthFixed`, `MeanPairwiseCosineFixed`, `GeometricMedianFixed` (L1 50%-breakdown w/ Medoid init), `CommonAverageReferenceDebiasFixed`, `FitHubStatsFixed` / `HubNormalizeScoreFixed`, Wildberger `RationalCosGateFixed` / `RationalSpreadFixed`, `CalibrateThresholdYoudenFixed`, `CoherenceGate`, `SignalEvidence`. |
 | `gno.land/p/arobi/assurance` | Core Agent & Familiar SDK (`NewAgentBuilder`, `BuildFamiliar`): fail-closed policies (`AllowList`, `BudgetCap`, `RiskGate`, `DriftGuard`, `CoherenceGuard`, `Composite`), `MemoryVault` (Spherical Quarantine + CAR + Hubness Z-Score + Overlap-Weighted Hybrid RRF `k=60`), `Familiar` + `CapabilityToken` + `WilsonLowerBoundFixed`, single-use `EffectWarrant`, `DelegatedWarrant`, `HarnessFrame`, `CanonicalCheckpoint` & `BuildOrderedReceiptTree`, RFC 6962 `Accumulator` (inclusion + `SUBPROOF` consistency). |
 | `gno.land/r/arobi/assurance` | Stateful Gno.land realm: atomic `init()` deployer-operator binding, `AgentPassport` registry, anti-equivocation `AnchorCheckpoint`, GNOT anchor fees & 30-day Pro Agent `SubscribeAgent` plan (enforcing `cur.Previous().IsUserCall()`), `RunDemoAction` / `RunAdaptiveDemoAction` / `RunFamiliarDemoMemory` / `RunFamiliarDemoAction`, and `gnoweb` UI. |
-| `mcp/` | Zero-dependency **Model Context Protocol (MCP) JSON-RPC 2.0 stdio server** (`immaculate-mcp-server.mjs`) exposing 11 governed tools (`governed_execute`, `familiar_remember`, `familiar_recall`, `verify_evidence_bundle`, `build_anchor_tx`, `export_whisper_handoff`, `estimate_context_budget`, `inspect_skill_preflight`, `gnosh_peers_plan`, `verify_consistency_proof`, `verify_cross_chain_checkpoint`) + `--print-gnosh-mcp` one-liner for Claude, Antigravity, `Ullumii`, `gnosh.ai`, and `gnomcp` clients. |
+| `gno.land/r/arobi/effects` | The effect lifecycle for actions that stop part way (see [Partly-run actions](#partly-run-actions-the-effect-lifecycle)): `BeginEffect` / `BeginDemoEffect`, step receipts, `FenceEffect`, computed closes, `MarkInDoubt` open to anyone after the deadline height, `Compensate` / `AcceptEffect` by the cleanup owner, `ApproveEffect` for IRREVERSIBLE effects, `OpenEffects`, `EffectJSON` and on-chain `VerifyEffect`. Acceptance tests in `testdata/`, run by `scripts/run-effects-txtars.mjs`. |
+| `mcp/` | Zero-dependency **Model Context Protocol (MCP) JSON-RPC 2.0 stdio server** (`immaculate-mcp-server.mjs`) exposing 12 governed tools (`governed_execute`, `familiar_remember`, `familiar_recall`, `verify_evidence_bundle`, `build_anchor_tx`, `export_whisper_handoff`, `estimate_context_budget`, `inspect_skill_preflight`, `gnosh_peers_plan`, `verify_consistency_proof`, `verify_cross_chain_checkpoint`, `verify_effect_life`) + `--print-gnosh-mcp` one-liner for Claude, Antigravity, `Ullumii`, `gnosh.ai`, and `gnomcp` clients. |
 | `adapters/` | Zero-dependency Node.js adapters for **`gnosh.ai`** (`gnosh-adapter.mjs` — native `stream-json` `init`/`tool_use`/`tool_result`/`compact_boundary`/`permission_denials` ingestion, pre-send context budgeting, monotone skill preflight, and `gnomem/v2` `.Parallel()` peers plan generator), **`Ullumii`** (`ullumii-adapter.mjs`), and **Sovereign Local GPU LLMs** (`local-llm-adapter.mjs`, live-tested on `Inkling-2-Mini-Uncensored`). |
 | `web/index.html` | Interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, and live `onyx-1` RPC explorer. |
 | `examples/` | Runnable, GnoVM-tested end-to-end examples: DeFi Treasury Rebalancer (`BuildDeFiTreasuryAgent`) and Multi-Agent Attenuated Delegation (`BuildCoordinatorAndWorker`). |
-| `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`). |
+| `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`), and the offline check of one effect's whole life (`verify-effect.mjs`). |
 | `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible E1–E5 benchmark runner (`run_experiments.mjs` → `RESULTS.md`), and **Live Public Benchmarks** (`run_live_benchmarks.mjs` → `LIVE_BENCHMARKS.md`). |
 | `CONTRIBUTORS.md` / `HACKATHON_SUBMISSION.md` | Team roles, GitHub task assignments (`@iShowLinux`, `@JonDevOps`, `@canderson777`), and compliant Gnome Tavern submission guide. |
 
 ---
+
+## Partly-run actions: the effect lifecycle
+
+An authorized action can stop part way: the executor dies between steps, a step reports success and changes nothing,
+or a retry applies twice. `gno.land/r/arobi/effects` gives each action a life of its own, sealed event by event in an
+RFC 6962 accumulator:
+
+```
+STARTED -> step receipts -> CLOSE: COMMITTED | PARTIAL | IN_DOUBT | ABORTED
+   |                                    |
+   +-- deadline height passes: IN_DOUBT +--> COMPENSATED | ACCEPTED
+```
+
+- **Detect.**
+  - Every start names a deadline in blocks. Past it, the effect reads IN_DOUBT even if nobody has sealed that yet.
+  - `MarkInDoubt` is open to anyone. It changes the state and nothing else.
+  - A close is computed from a read-back, never asserted:
+    - the declared postcondition is COMMITTED;
+    - the declared pre-state is ABORTED, but only once the effect has been fenced (by `FenceEffect`, or by its deadline passing) before the read-back. Until then "nothing seen" stays IN_DOUBT, because something already sent under it could still land;
+    - anything else is PARTIAL.
+- **Own.**
+  - Every start names a cleanup owner. `OpenEffects` lists every IN_DOUBT and PARTIAL effect with its owner, its age and the receipts that landed.
+  - Only one effect at a time may run on a key. A new start is refused, and the refusal names the open effect.
+  - A retry carries the same idempotency key and the next attempt number. Every event names its attempt, and a call for another attempt is refused.
+- **Undo.**
+  - Every start declares a reversal class: REVERSIBLE, COMPENSABLE or IRREVERSIBLE.
+  - An IRREVERSIBLE effect needs the agent owner's `ApproveEffect`, for that key and postcondition, before it starts. A refused start leaves no record.
+  - A compensation is an effect of its own, capped at three per effect. Its postcondition is the original's pre-state, and the original reads COMPENSATED only when the compensation's read-back shows that state.
+  - The owner's `PauseEffects` holds new starts, steps and compensations. Detection keeps working while effects are paused.
+
+**What the realm can and cannot see.**
+- A **demo** effect acts on a small state inside the realm. The realm reads the pre-state and every read-back itself, so its closes are computed from state the chain holds.
+- An **external** effect acts outside the chain. The agent reports digests and the height it observed them at, and the realm checks them against the digests the start declared, the attempt and the age of the read-back. It cannot see the downstream system itself.
+- A fence binds a downstream only if that downstream checks `EffectLive(id, attempt)` before it applies anything.
+
+**Checking a life offline.** `EffectJSON(id)` returns the spec and every event.
+`node verifier/verify-effect.mjs effect.json` recomputes the spec digest, every leaf, the hash chain and every
+transition. It refuses a gap, a fork, a reordering or an asserted outcome.
+
+**Acceptance tests.** `node scripts/run-effects-txtars.mjs <gno v1.8.0 checkout>` runs the six scenarios in
+`gno.land/r/arobi/effects/testdata/` on an in-memory node, in gno's own integration harness:
+1. a quiet executor becomes IN_DOUBT with no call from it;
+2. the key refuses a new start;
+3. a compensation restores the first state, and the life verifies offline while a tampered copy does not;
+4. an IRREVERSIBLE effect is held until it is approved;
+5. a retry is never applied twice;
+6. a step that changed nothing is IN_DOUBT until fenced, then ABORTED.
 
 ## Quick Start — Fluent builder
 

@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: "22"
       - name: Run standalone RFC 6962 verifier, Ullumii/gnosh.ai adapters, & MCP stdio server tests
-        run: node --test verifier/verify-evidence.test.mjs adapters/adapters.test.mjs mcp/immaculate-mcp-server.test.mjs
+        run: node --test verifier/verify-evidence.test.mjs verifier/verify-effect.test.mjs adapters/adapters.test.mjs mcp/immaculate-mcp-server.test.mjs
 
   gno-tests:
     runs-on: ubuntu-latest
@@ -35,6 +35,10 @@ jobs:
         env:
           GNO_SRC: /tmp/gno-v1.8.0
         run: bash scripts/run-gno-tests.sh
+      - name: Run the effect lifecycle acceptance tests (txtars on an in-memory gno.land node)
+        env:
+          GOWORK: "off"
+        run: node scripts/run-effects-txtars.mjs /tmp/gno-v1.8.0
       - name: Run pre-registered scientific experiments (E1–E12)
         env:
           GNO_SRC: /tmp/gno-v1.8.0

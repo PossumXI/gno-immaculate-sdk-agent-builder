@@ -53,7 +53,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(init.result.serverInfo.name, 'immaculate-sdk-agent-mcp');
 
     const list = await client.call('tools/list');
-    assert.equal(list.result.tools.length, 11);
+    assert.equal(list.result.tools.length, 12);
 
     // 1. Seed 1 trusted memory, block a k=1->k=2 cold-start poison injection (E6b), then seed 2nd clean + block post-boot poison.
     const m1 = await client.call('tools/call', {
@@ -209,6 +209,28 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     assert.equal(cpRes.result.structuredContent.verified, true);
     assert.equal(cpRes.result.structuredContent.receiptCount, 2);
     assert.match(cpRes.result.structuredContent.receiptRoot, /^[0-9a-f]{64}$/);
+
+    // An effect's life: a START sealed for its spec verifies; the same life with its spec changed does not.
+    const { encodeEvent, encodeSpec, leafHash } = await import('../verifier/verify-effect.mjs');
+    const crypto = await import('node:crypto');
+    const h = (s) => crypto.createHash('sha256').update(s).digest('hex');
+    const spec = {
+      agent_id: 'worker-1', effect_key: 'ledger:alice', idempotency_key: 'pay-1', attempt: 1, steps: 1,
+      reversal: 'COMPENSABLE', inverse: 'restore', read_back: 'REALM', pre_state: h('before'), postcondition: h('after'),
+      deadline_blocks: 5, cleanup_owner: 'g1cleanup', approval_id: 0, compensates: 0,
+    };
+    const start = { attempt: 1, seq: 0, prev_hash: '0'.repeat(64), kind: 'START', state: 'STARTED', actor: 'g1exec', height: 7,
+      step_index: 0, digest: h(encodeSpec(spec)), observed_height: 0, link: 0 };
+    start.leaf = leafHash(encodeEvent(1, start)).toString('hex');
+    const doc = { id: 1, spec, spec_digest: h(encodeSpec(spec)), state: 'STARTED', events: [start] };
+    const lifeOk = await client.call('tools/call', { name: 'verify_effect_life', arguments: { effect: doc } });
+    assert.equal(lifeOk.result.structuredContent.verified, true);
+    assert.equal(lifeOk.result.structuredContent.state, 'STARTED');
+    const bad = await client.call('tools/call', {
+      name: 'verify_effect_life', arguments: { effect: JSON.stringify({ ...doc, spec: { ...spec, steps: 2 } }) },
+    });
+    assert.equal(bad.result.structuredContent.verified, false);
+    assert.match(bad.result.structuredContent.reason, /spec_digest/);
   } finally {
     client.close();
   }

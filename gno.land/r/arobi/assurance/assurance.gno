@@ -155,6 +155,16 @@ func CollectServiceFees(cur realm, to address) int64 {
 func AnchorFeeUgnot() int64      { return anchorFeeUgnot }
 func AgentPlanPriceUgnot() int64 { return agentPlanPriceUgnot }
 
+// AgentOwner returns an agent passport's owner, and whether the passport is active (registered and not revoked).
+// It only reads. gno.land/r/arobi/effects uses it to check that whoever starts an agent's effect owns the agent.
+func AgentOwner(agentID string) (address, bool) {
+	pp, ok := passports.Get(agentID).(*AgentPassport)
+	if !ok || pp == nil {
+		return "", false
+	}
+	return pp.Owner, !pp.Revoked
+}
+
 // ── Demo Agent Setup ─────────────────────────────────────────────────────────
 
 func ensureDemoAgent() *sdk.Agent {
