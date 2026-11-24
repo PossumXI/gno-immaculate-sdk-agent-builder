@@ -21,4 +21,7 @@ COPY --from=gno /opt/gno /opt/gno
 ENV GNO_SRC=/opt/gno
 WORKDIR /src
 COPY . .
+# Sources are committed with CRLF, which bash on Linux rejects outright
+# ("set: pipefail\r: invalid option name"). Normalize shell scripts before use.
+RUN sed -i 's/\r$//' scripts/*.sh
 CMD ["bash", "scripts/reproduce.sh"]
