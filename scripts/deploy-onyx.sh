@@ -18,6 +18,12 @@ CHAIN_ID="${GNO_CHAIN_ID:-onyx-1}"
 GAS_FEE="${GNO_GAS_FEE:-5000000ugnot}"
 GAS_WANTED="${GNO_GAS_WANTED:-200000000}"
 MAX_DEPOSIT="${GNO_MAX_DEPOSIT:-100000000ugnot}"
+# A Gno package is immutable at its path. The packages first submitted to onyx-1 on 2026-11-23 hold the code
+# from before the storage and security fixes, so this version deploys at <path>/$PKG_VERSION. Use a new
+# version for any later change. DRY_RUN=1 stages and prints every path without broadcasting.
+PKG_VERSION="${GNO_PKG_VERSION:-v2}"
+[[ "$PKG_VERSION" =~ ^v[0-9]+$ ]] || { echo "ERROR: GNO_PKG_VERSION must look like v2 (got '$PKG_VERSION')" >&2; exit 2; }
+DRY_RUN="${DRY_RUN:-0}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAMESPACE="${2:-}"
@@ -30,7 +36,8 @@ if [ -z "$NAMESPACE" ]; then
 fi
 
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
+[ -n "$STAGE" ] && [ -d "$STAGE" ] || { echo "ERROR: mktemp failed" >&2; exit 2; }
+trap 'case "$STAGE" in "${TMPDIR:-/tmp}"/tmp.*) rm -rf -- "$STAGE" ;; esac' EXIT
 
 deploy_pkg() {
   local kind="$1" # p or r
@@ -42,14 +49,18 @@ deploy_pkg() {
   rm -f "$dst"/*_test.gno
   for f in "$dst"/*.gno "$dst"/gnomod.toml; do
     sed -i.bak \
-      -e "s|gno.land/p/arobi/|gno.land/p/${NAMESPACE}/|g" \
-      -e "s|gno.land/r/arobi/|gno.land/r/${NAMESPACE}/|g" \
-      -e "s|/r/arobi/|/r/${NAMESPACE}/|g" \
+      -e "s|gno.land/p/arobi/\([a-z_]*\)|gno.land/p/${NAMESPACE}/\1/${PKG_VERSION}|g" \
+      -e "s|gno.land/r/arobi/\([a-z_]*\)|gno.land/r/${NAMESPACE}/\1/${PKG_VERSION}|g" \
+      -e "s|/r/arobi/\([a-z_]*\)|/r/${NAMESPACE}/\1/${PKG_VERSION}|g" \
       "$f"
     rm -f "$f.bak"
   done
-  local pkgpath="gno.land/$kind/${NAMESPACE}/$name"
+  local pkgpath="gno.land/$kind/${NAMESPACE}/$name/${PKG_VERSION}"
   echo "=== Deploying $pkgpath to $CHAIN_ID ($REMOTE) ==="
+  if [ "$DRY_RUN" = 1 ]; then
+    grep -h -E '^module|"gno\.land/[pr]/' "$dst"/*.gno "$dst"/gnomod.toml | sed 's/^[[:space:]]*/    /' | sort -u
+    return 0
+  fi
   "$GNOKEY_BIN" maketx addpkg \
     --pkgpath "$pkgpath" \
     --pkgdir "$dst" \
@@ -67,9 +78,10 @@ deploy_pkg p assurance
 deploy_pkg r assurance
 
 echo ""
+[ "$DRY_RUN" = 1 ] && { echo "=== Dry run: nothing was broadcast ==="; exit 0; }
 echo "=== Deployed Immaculate SDK Agent Builder to Onyx ($CHAIN_ID) ==="
-echo "Explorer: https://onyx.testnets.gno.land/r/${NAMESPACE}/assurance"
+echo "Explorer: https://onyx.testnets.gno.land/r/${NAMESPACE}/assurance/${PKG_VERSION}"
 echo ""
 echo "Next ($KEY_NAME is already the operator, bound in init() during deployment; never commit payout addresses):"
-echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance --func SetSettlementSink --args <sink-address> --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 2000000 --broadcast $KEY_NAME"
-echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance --func RunDemoAction --args summarize --args doc:1 --args hello --args 0 --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 5000000 --broadcast $KEY_NAME"
+echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance/${PKG_VERSION} --func SetSettlementSink --args <sink-address> --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 2000000 --broadcast $KEY_NAME"
+echo "  $GNOKEY_BIN maketx call --pkgpath gno.land/r/${NAMESPACE}/assurance/${PKG_VERSION} --func RunDemoAction --args summarize --args doc:1 --args hello --args 0 --remote $REMOTE --chainid $CHAIN_ID --gas-fee $GAS_FEE --gas-wanted 5000000 --broadcast $KEY_NAME"

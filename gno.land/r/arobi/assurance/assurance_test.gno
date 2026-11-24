@@ -37,9 +37,11 @@ func resetRealm() {
 	anchorFeeUgnot = 1000
 	agentPlanPriceUgnot = 10000000
 	passports = avl.NewTree()
-	agentOrder = nil
-	anchors = nil
-	globalAcc = sdk.Accumulator{}
+	agentCount = 0
+	agentSeq = avl.NewTree()
+	anchors = avl.NewTree()
+	anchorCount = 0
+	globalAcc = sdk.LedgerAccumulator{}
 	demoLastOut = ""
 	demoLastErr = ""
 	demoLastRoot = ""
