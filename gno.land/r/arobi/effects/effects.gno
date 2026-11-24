@@ -208,16 +208,12 @@ func begin(spec sdk.EffectSpec, executor address, keys, values, prior []string) 
 			panic("inverse must be printable ASCII")
 		}
 	}
-	if err := spec.Validate(); err != nil {
-		panic(err.Error())
-	}
-	if spec.Compensates == 0 && paused.Has(spec.AgentID) {
-		panic("agent " + spec.AgentID + " has its effects paused")
-	}
 	height := runtime.ChainHeight()
 	ik := pair(spec.AgentID, spec.IdempotencyKey)
 	if spec.Compensates == 0 {
-		// A retry with the same idempotency key is never applied twice.
+		// A retry with the same idempotency key is never applied twice. It is answered before the new start is checked:
+		// once a demo effect has committed, a retry reads the committed state as its pre-state, a start no one could
+		// begin, and the answer is still the effect that ran.
 		if prevID, ok := attempts.Get(ik).(uint64); ok {
 			prev := mustEffect(prevID)
 			st := effectiveState(prev, height)
@@ -235,6 +231,12 @@ func begin(spec sdk.EffectSpec, executor address, keys, values, prior []string) 
 		} else if spec.Attempt != 1 {
 			panic("the first try is attempt 1")
 		}
+	}
+	if err := spec.Validate(); err != nil {
+		panic(err.Error())
+	}
+	if spec.Compensates == 0 && paused.Has(spec.AgentID) {
+		panic("agent " + spec.AgentID + " has its effects paused")
 	}
 	// One effect at a time per key: a compensation may run while the effect it undoes holds the key. An ACCEPTED
 	// effect that may still land keeps holding it.
