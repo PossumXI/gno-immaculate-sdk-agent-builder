@@ -182,7 +182,9 @@ STARTED -> step receipts -> CLOSE: COMMITTED | PARTIAL | IN_DOUBT | ABORTED
     - The realm cannot tell whether the approver account is held by a person. A deployment that needs a particular person, or two of them, makes that account theirs, for example a multisig.
   - A compensation is an effect of its own, capped at three per effect. Its postcondition is the original's pre-state, and the original reads COMPENSATED only when the compensation's read-back shows that state.
   - Undoing an effect that may still land, while it is IN_DOUBT or PARTIAL, also needs the approver's `ApproveEffect`. The approval is recorded on the event: the clock alone never starts such an undo.
-  - `AcceptEffect` lets the cleanup owner take what landed as final. An IN_DOUBT effect is fenced first, and nothing is accepted while its compensation is still open. An accepted effect that may still land keeps holding its key.
+  - `AcceptEffect` lets the cleanup owner take what landed as final. An IN_DOUBT effect is fenced first, and nothing is accepted while its compensation is still open.
+  - An accepted or undone effect that may still land keeps holding its key. Only the approver's `ReleaseKey` frees it, against the digest of the downstream's own record that the attempt was refused or expired unused. The release is sealed in the effect's life.
+  - Every `SetApprover` starts a new approver epoch, so naming an account again does not revive its older unused approvals.
   - The owner's `PauseEffects` holds new starts, steps and compensations. Detection keeps working while effects are paused.
 
 **What the realm can and cannot see.**

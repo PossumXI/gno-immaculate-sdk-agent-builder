@@ -242,6 +242,9 @@ const (
 	EventCompensate  EffectEventKind = "COMPENSATE"  // on the effect being undone: its compensation (Link) started
 	EventCompensated EffectEventKind = "COMPENSATED" // on the effect being undone: the compensation (Link) committed
 	EventAccept      EffectEventKind = "ACCEPT"
+	// EventRelease frees the key an ACCEPTED or COMPENSATED effect that may still land kept holding. Only the agent's
+	// approver seals it, with the digest of the downstream's own record that the attempt was refused or expired unused.
+	EventRelease EffectEventKind = "RELEASE"
 )
 
 // EffectEvent is one sealed event, hash-chained to the effect's previous event.
@@ -313,6 +316,7 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 	lastStepHeight := start
 	fenced, fenceSeq, fenceHeight := false, uint32(0), int64(0)
 	compensations := uint32(0)
+	released := false
 	openLinks := map[uint64]bool{}
 	for i := 1; i < len(events); i++ {
 		ev, prev := events[i], events[i-1]
@@ -324,7 +328,7 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 			return "", errors.New(at + "breaks the hash chain (a gap, a fork or a reordering)")
 		case ev.Height < prev.Height:
 			return "", errors.New(at + "goes back in height")
-		case state.Terminal():
+		case state.Terminal() && ev.Kind != EventRelease:
 			return "", errors.New(at + "follows a terminal state")
 		}
 		next := state
@@ -389,6 +393,14 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 				return "", errors.New(at + "COMPENSATED without its compensation, or with a read-back other than the pre-state")
 			}
 			next = EffectCompensated
+		case EventRelease:
+			// The key an accepted or undone effect that may still land kept holding is freed once, by someone other than
+			// the executor, against the downstream's own record (a non-zero digest) that the attempt will not land.
+			if !spec.Landable() || released || ev.Actor == executor || ev.Digest == ZeroDigest() ||
+				(state != EffectAccepted && state != EffectCompensated) {
+				return "", errors.New(at + "is not a release the approver may seal here")
+			}
+			released = true
 		case EventAccept:
 			// A person may take what landed as final, once nothing more can be sent under the effect: an IN_DOUBT
 			// effect is fenced first.

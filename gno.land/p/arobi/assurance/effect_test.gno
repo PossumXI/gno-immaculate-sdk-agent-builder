@@ -83,6 +83,37 @@ func TestALandableEffectNeverReadsAbortedAndNeedsApprovalToCompensate(t *testing
 	if st, err := VerifyEffectLife(9, s, approved); err != nil || st != EffectCompensated {
 		t.Fatalf("got %s, %v", st, err)
 	}
+	// Undone, yet the old request may still land: the key is freed only by a RELEASE from someone other than the
+	// executor, against the downstream's own record that the attempt will not land, and only once.
+	release := func(actor string, digest [32]byte) EffectEvent {
+		return EffectEvent{Kind: EventRelease, State: EffectCompensated, Actor: actor, Height: 120, Digest: digest}
+	}
+	withRelease := func(evs ...EffectEvent) []EffectEvent {
+		base := []EffectEvent{
+			startEvent(s, 100),
+			{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+			{Kind: EventCompensate, State: EffectInDoubt, Actor: effOwner, Height: 112, Digest: HashString("approval 3"), Link: 10},
+			{Kind: EventCompensated, State: EffectCompensated, Actor: effOwner, Height: 115, Digest: s.PreState, Link: 10},
+		}
+		return chainEvents(9, s, append(base, evs...))
+	}
+	if st, err := VerifyEffectLife(9, s, withRelease(release("g1approver", HashString("downstream: attempt 1 refused")))); err != nil || st != EffectCompensated {
+		t.Fatalf("got %s, %v", st, err)
+	}
+	for name, evs := range map[string][]EffectEvent{
+		"by the executor":   withRelease(release(effExecutor, HashString("receipt"))),
+		"with no receipt":   withRelease(release("g1approver", ZeroDigest())),
+		"twice":             withRelease(release("g1approver", HashString("r")), release("g1approver", HashString("r2"))),
+		"of a live sink":    chainEvents(9, effSpec(), []EffectEvent{startEvent(effSpec(), 100), {Kind: EventFence, State: EffectStarted, Actor: effExecutor, Height: 101}, {Kind: EventClose, State: EffectAborted, Actor: effExecutor, Height: 103, Digest: effSpec().PreState, ObservedHeight: 102}, {Kind: EventRelease, State: EffectAborted, Actor: "g1approver", Height: 104, Digest: HashString("r")}}),
+	} {
+		spec := s
+		if name == "of a live sink" {
+			spec = effSpec()
+		}
+		if _, err := VerifyEffectLife(9, spec, evs); err == nil {
+			t.Fatalf("release %s must not verify", name)
+		}
+	}
 }
 
 // chainEvents numbers the events, links each to the one before and returns them.

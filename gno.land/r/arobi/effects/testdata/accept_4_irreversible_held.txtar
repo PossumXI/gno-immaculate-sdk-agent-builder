@@ -46,8 +46,10 @@ stdout OK!
 gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CloseDemoEffect -args 1 -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
 stdout '\("COMMITTED" string\)'
 
-# Used once: a second start under the same approval is refused, and nothing undoes an IRREVERSIBLE effect.
-! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args mail:customers -args notice-2 -args 1 -args IRREVERSIBLE -args '' -args m1 -args sent -args 10 -args $cleanup_user_addr -args 2 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+# Used once: a second start under the same approval is refused, and nothing undoes an IRREVERSIBLE effect. (The
+# second start is an external effect, from another declared pre-state to the same postcondition: a demo start could not
+# begin at all, because m1 already holds "sent".)
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginEffect -args worker-1 -args mail:customers -args notice-2 -args 1 -args 1 -args IRREVERSIBLE -args '' -args 3333333333333333333333333333333333333333333333333333333333333333 -args f67be18586311abf25cc20d8848583e87bdbda572a4d62b8432e964c90607b5c -args false -args 10 -args $cleanup_user_addr -args 2 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
 stderr 'approval 2 is used'
 ! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CompensateDemo -args 1 -args 10 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
 stderr 'IRREVERSIBLE'

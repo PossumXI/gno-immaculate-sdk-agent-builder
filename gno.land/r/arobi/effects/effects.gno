@@ -53,6 +53,7 @@ type effect struct {
 	FenceHeight   int64
 	Compensation  uint64 // the latest compensation started for this effect
 	Compensations uint32
+	Released      bool // the approver freed the key this effect kept holding (ReleaseKey)
 	DemoKeys      []string // demo effects: the keys the steps write, in step order
 	DemoValues    []string // what the start declared the steps write
 	DemoPrior     []string // the values before the start: what a compensation restores
@@ -64,6 +65,7 @@ type approval struct {
 	EffectKey     string
 	Postcondition [32]byte
 	Approver      address
+	Epoch         uint64 // the agent's approver epoch when it was given: SetApprover moves to the next one
 	Height        int64
 	Used          bool
 }
@@ -83,6 +85,7 @@ var (
 	approvals     = avl.NewTree() // key(id) -> *approval
 	approvalCount uint64
 	approvers     = avl.NewTree() // agentID -> address that approves (never the owner who runs the effects)
+	epochs        = avl.NewTree() // agentID -> approver epoch; every SetApprover starts a new one
 	paused        = avl.NewTree() // agentID -> true while the owner has paused the agent's effects
 	evidence      sdk.LedgerAccumulator
 	demoState     = avl.NewTree() // demo key -> value
@@ -90,16 +93,49 @@ var (
 
 // ── Approvals and pauses ─────────────────────────────────────────────────────
 
-// SetApprover names the account that approves the agent's IRREVERSIBLE effects, and the undo of its effects that may
-// still land. The agent's owner sets it, and it must be another account: the key that runs an effect never approves
-// it. Changing it voids every unused approval the previous approver gave.
+// SetApprover names the account that approves the agent's IRREVERSIBLE effects, the undo of its effects that may still
+// land, and the release of the keys those keep. The agent's owner sets it, and it must be another account: the key that
+// runs an effect never approves it. Every call starts a new approver epoch, which voids every unused approval given
+// before it, even when the same account is named again.
 func SetApprover(cur realm, agentID string, approver address) {
 	owner := mustOwner(cur, agentID)
 	if !approver.IsValid() || approver == owner {
 		panic("the approver must be a valid account other than the agent's owner")
 	}
 	approvers.Set(agentID, approver)
-	chain.Emit("ImmaculateEffectApproverSet", "agent_id", agentID, "approver", approver.String())
+	epochs.Set(agentID, approverEpoch(agentID)+1)
+	chain.Emit("ImmaculateEffectApproverSet", "agent_id", agentID, "approver", approver.String(),
+		"epoch", strconv.FormatUint(approverEpoch(agentID), 10))
+}
+
+func approverEpoch(agentID string) uint64 {
+	if e, ok := epochs.Get(agentID).(uint64); ok {
+		return e
+	}
+	return 0
+}
+
+// ReleaseKey frees the key that an ACCEPTED or COMPENSATED effect whose downstream does not honour EffectLive kept
+// holding. Only the agent's approver may release it, and only against receiptHex: the digest of the downstream's own
+// record that the attempt was refused or expired unused. The RELEASE is sealed in the effect's life.
+func ReleaseKey(cur realm, effectID uint64, receiptHex string) {
+	e := mustEffect(effectID)
+	caller := mustUser(cur)
+	receipt := mustDigest("receiptHex", receiptHex)
+	approver, ok := approvers.Get(e.Spec.AgentID).(address)
+	holderID, held := holders.Get(pair(e.Spec.AgentID, e.Spec.EffectKey)).(uint64)
+	switch {
+	case !ok || caller != approver:
+		panic("only agent " + e.Spec.AgentID + "'s approver releases a key")
+	case caller == e.Executor:
+		panic("the executor does not release its own effect's key")
+	case !holdsKey(e) || !held || holderID != e.ID:
+		panic("effect " + strconv.FormatUint(e.ID, 10) + " holds no key to release")
+	case receipt == sdk.ZeroDigest():
+		panic("a release needs the downstream's record that the attempt will not land")
+	}
+	e.Released = true
+	seal(e, sdk.EventRelease, e.State, caller, 0, receipt, 0, 0)
 }
 
 // ApproveEffect records the approver's approval of one effect of the agent: on this key, with this postcondition,
@@ -113,7 +149,8 @@ func ApproveEffect(cur realm, agentID, effectKey, postconditionHex string) uint6
 	post := mustDigest("postconditionHex", postconditionHex)
 	approvalCount++
 	approvals.Set(key(approvalCount), &approval{
-		ID: approvalCount, AgentID: agentID, EffectKey: effectKey, Postcondition: post, Approver: caller, Height: runtime.ChainHeight(),
+		ID: approvalCount, AgentID: agentID, EffectKey: effectKey, Postcondition: post, Approver: caller,
+		Epoch: approverEpoch(agentID), Height: runtime.ChainHeight(),
 	})
 	chain.Emit("ImmaculateEffectApproved", "approval_id", strconv.FormatUint(approvalCount, 10), "agent_id", agentID, "effect_key", effectKey)
 	return approvalCount
@@ -129,7 +166,7 @@ func useApproval(id uint64, agentID, effectKey string, postcondition [32]byte, e
 		panic("approval " + strconv.FormatUint(a.ID, 10) + " is used")
 	case a.AgentID != agentID || a.EffectKey != effectKey || a.Postcondition != postcondition:
 		panic("approval " + strconv.FormatUint(a.ID, 10) + " was given for another agent, key or postcondition")
-	case !ok || a.Approver != approver:
+	case !ok || a.Approver != approver || a.Epoch != approverEpoch(agentID):
 		panic("approval " + strconv.FormatUint(a.ID, 10) + " is not from agent " + agentID + "'s current approver")
 	case a.Approver == executor:
 		panic("approval " + strconv.FormatUint(a.ID, 10) + " is from the executor itself")
@@ -141,6 +178,7 @@ func useApproval(id uint64, agentID, effectKey string, postcondition [32]byte, e
 	out = lenPrefixed(out, a.EffectKey)
 	out = append(out, a.Postcondition[:]...)
 	out = lenPrefixed(out, a.Approver.String())
+	out = binary.BigEndian.AppendUint64(out, a.Epoch)
 	out = binary.BigEndian.AppendUint64(out, uint64(a.Height))
 	return sdk.HashBytes(out)
 }
@@ -532,10 +570,12 @@ func seal(e *effect, kind sdk.EffectEventKind, state sdk.EffectState, actor addr
 	)
 }
 
-// holdsKey reports whether a closed effect still holds its key: an ACCEPTED effect whose downstream does not honour
-// EffectLive, because a request sent under it may still land and a new effect on the key would then apply twice.
+// holdsKey reports whether a closed effect still holds its key: an ACCEPTED or COMPENSATED effect whose downstream does
+// not honour EffectLive, until the approver releases it. A request sent under it may still land, and a new effect on
+// the key would then apply twice; a person deciding the undo does not prove the old request is dead. (An effect undone
+// after it COMMITTED had already landed: its compensation held the key while it ran, and frees it when it closes.)
 func holdsKey(e *effect) bool {
-	return e.State == sdk.EffectAccepted && e.Spec.Landable()
+	return (e.State == sdk.EffectAccepted || e.State == sdk.EffectCompensated) && e.Spec.Landable() && !e.Released
 }
 
 func (e *effect) lastStepHeight() int64 {

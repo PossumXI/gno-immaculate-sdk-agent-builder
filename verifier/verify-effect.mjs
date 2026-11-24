@@ -97,14 +97,14 @@ export function verifyLife(id, s, events) {
   }
   if (first.digest !== sha256(encodeSpec(s)).toString('hex')) throw new Error('START does not seal this spec');
   const executor = first.actor, deadline = first.height + s.deadline_blocks;
-  let state = 'STARTED', steps = 0, lastStepHeight = first.height, fenced = false, fenceSeq = 0, fenceHeight = 0, comps = 0;
+  let state = 'STARTED', steps = 0, lastStepHeight = first.height, fenced = false, fenceSeq = 0, fenceHeight = 0, comps = 0, released = false;
   const links = new Set();
   for (let i = 1; i < events.length; i++) {
     const ev = events[i], prev = events[i - 1], at = `event ${i}: `;
     if (ev.attempt !== s.attempt) throw new Error(at + 'belongs to another attempt');
     if (ev.seq !== i || ev.prev_hash !== leafHash(encodeEvent(id, prev)).toString('hex')) throw new Error(at + 'breaks the hash chain (a gap, a fork or a reordering)');
     if (ev.height < prev.height) throw new Error(at + 'goes back in height');
-    if (TERMINAL.has(state)) throw new Error(at + 'follows a terminal state');
+    if (TERMINAL.has(state) && ev.kind !== 'RELEASE') throw new Error(at + 'follows a terminal state');
     let next = state;
     switch (ev.kind) {
       case 'STEP':
@@ -155,6 +155,14 @@ export function verifyLife(id, s, events) {
       case 'COMPENSATED':
         if (!links.has(ev.link) || ev.digest !== s.pre_state) throw new Error(at + 'COMPENSATED without its compensation, or not back at the pre-state');
         next = 'COMPENSATED';
+        break;
+      case 'RELEASE':
+        // Frees the key an accepted or undone landable effect kept: once, not by the executor, against the
+        // downstream's own record that the attempt will not land.
+        if (!landable(s) || released || ev.actor === executor || ev.digest === ZERO || (state !== 'ACCEPTED' && state !== 'COMPENSATED')) {
+          throw new Error(at + 'is not a release the approver may seal here');
+        }
+        released = true;
         break;
       case 'ACCEPT':
         if (ev.actor !== s.cleanup_owner || (state !== 'PARTIAL' && state !== 'IN_DOUBT') || (state === 'IN_DOUBT' && !fenced)) {

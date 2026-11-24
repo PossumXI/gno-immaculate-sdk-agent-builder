@@ -245,6 +245,71 @@ func TestALandableEffectStaysInDoubtAndHoldsItsKey(cur realm, t *testing.T) {
 	uassert.AbortsContains(t, cur, "may still land", func() {
 		BeginEffect(cross(cur), "fx-land", "mail:list", "l-2", 1, 1, "COMPENSABLE", "send a correction", pre, post, false, 50, cleanupAddr, 0)
 	})
+	// Only the approver frees it, and only against the downstream's record that the attempt will not land.
+	testing.SetRealm(testing.NewUserRealm(cleanupAddr))
+	uassert.AbortsContains(t, cur, "approver releases", func() { ReleaseKey(cross(cur), id, sdk.Hex(sdk.HashString("list says no"))) })
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	uassert.AbortsContains(t, cur, "downstream's record", func() { ReleaseKey(cross(cur), id, strings.Repeat("0", 64)) })
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	ReleaseKey(cross(cur), id, sdk.Hex(sdk.HashString("mail list: attempt 1 of l-1 refused")))
+	uassert.Equal(t, "ACCEPTED", VerifyEffect(id))
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	uassert.AbortsContains(t, cur, "holds no key", func() { ReleaseKey(cross(cur), id, sdk.Hex(sdk.HashString("again"))) })
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	next := BeginEffect(cross(cur), "fx-land", "mail:list", "l-2", 1, 1, "COMPENSABLE", "send a correction", pre, post, false, 50, cleanupAddr, 0)
+	uassert.True(t, next > id)
+}
+
+// An undone effect that may still land keeps its key too, until the approver releases it.
+func TestACompensatedLandableEffectHoldsItsKeyUntilReleased(cur realm, t *testing.T) {
+	register(cur, t, "fx-undo")
+	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	id := BeginEffect(cross(cur), "fx-undo", "wire:7", "w-1", 1, 1, "COMPENSABLE", "send it back", pre, post, false, 3, cleanupAddr, 0)
+	testing.SkipHeights(4)
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	SetApprover(cross(cur), "fx-undo", approverAddr)
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	appr := ApproveEffect(cross(cur), "fx-undo", "wire:7", pre)
+	testing.SetRealm(testing.NewUserRealm(cleanupAddr))
+	comp := Compensate(cross(cur), id, 1, post, 10, appr)
+	testing.SetRealm(testing.NewUserRealm(cleanupAddr))
+	RecordStep(cross(cur), comp, 1, 1, sdk.Hex(sdk.HashString("returned")))
+	testing.SetRealm(testing.NewUserRealm(cleanupAddr))
+	uassert.Equal(t, "COMMITTED", CloseEffect(cross(cur), comp, 1, pre, runtime.ChainHeight()))
+	uassert.Equal(t, "COMPENSATED", EffectState(id))
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	uassert.AbortsContains(t, cur, "may still land", func() {
+		BeginEffect(cross(cur), "fx-undo", "wire:7", "w-2", 1, 1, "COMPENSABLE", "send it back", pre, post, false, 3, cleanupAddr, 0)
+	})
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	ReleaseKey(cross(cur), id, sdk.Hex(sdk.HashString("bank: wire 7 attempt 1 expired unused")))
+	uassert.Equal(t, "COMPENSATED", VerifyEffect(id))
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	next := BeginEffect(cross(cur), "fx-undo", "wire:7", "w-2", 1, 1, "COMPENSABLE", "send it back", pre, post, false, 3, cleanupAddr, 0)
+	uassert.True(t, next > comp)
+}
+
+// Every SetApprover starts a new epoch: naming the same account again does not revive its older approvals.
+func TestAnApprovalFromAnEarlierApproverEpochIsVoid(cur realm, t *testing.T) {
+	register(cur, t, "fx-epoch")
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	SetApprover(cross(cur), "fx-epoch", approverAddr)
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	old := ApproveEffect(cross(cur), "fx-epoch", "mail:all", DemoDigest("e1", "sent"))
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	SetApprover(cross(cur), "fx-epoch", otherAddr)
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	SetApprover(cross(cur), "fx-epoch", approverAddr)
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	uassert.AbortsContains(t, cur, "current approver", func() {
+		BeginDemoEffect(cross(cur), "fx-epoch", "mail:all", "e-1", 1, "IRREVERSIBLE", "", "e1", "sent", 5, cleanupAddr, old)
+	})
+	testing.SetRealm(testing.NewUserRealm(approverAddr))
+	fresh := ApproveEffect(cross(cur), "fx-epoch", "mail:all", DemoDigest("e1", "sent"))
+	testing.SetRealm(testing.NewUserRealm(ownerAddr))
+	id := BeginDemoEffect(cross(cur), "fx-epoch", "mail:all", "e-1", 1, "IRREVERSIBLE", "", "e1", "sent", 5, cleanupAddr, fresh)
+	uassert.True(t, id > 0)
 }
 
 // The same against a downstream that honours EffectLive: after the fence the pre-state read-back is ABORTED, and the

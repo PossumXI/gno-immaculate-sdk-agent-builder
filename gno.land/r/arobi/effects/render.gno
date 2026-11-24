@@ -130,6 +130,7 @@ func EffectJSON(effectID uint64) string {
 		`,"state":` + jsonString(string(e.State)) +
 		`,"effective_state":` + jsonString(string(effectiveState(e, runtime.ChainHeight()))) +
 		`,"compensation":` + strconv.FormatUint(e.Compensation, 10) +
+		`,"holds_key":` + strconv.FormatBool(holdsKey(e)) +
 		`,"events":[`)
 	for seq := uint32(0); seq < e.Events; seq++ {
 		se := events.Get(key(e.ID) + "/" + key(uint64(seq))).(sealedEvent)

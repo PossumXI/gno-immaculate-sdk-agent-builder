@@ -101,3 +101,15 @@ test('an IN_DOUBT effect is accepted only after a fence', () => {
   const fence = { kind: 'FENCE', state: 'IN_DOUBT', actor: 'g1cleanup', height: 15 };
   assert.deepEqual(verifyEffect(seal({ ...l, raw: [l.raw[0], l.raw[1], l.raw[2], fence, accept] })), { state: 'ACCEPTED', events: 5 });
 });
+
+test('a release frees an undone landable effect once, against the downstream record, never by the executor', () => {
+  const l = life();
+  l.spec = { ...l.spec, read_back: 'AGENT', downstream_honours_live: false };
+  const start = { ...l.raw[0], digest: crypto.createHash('sha256').update(encodeSpec(l.spec)).digest('hex') };
+  const undone = [start, l.raw[1], l.raw[2], { ...l.raw[3], digest: h('approval 1') }, l.raw[4]];
+  const rel = (actor, digest) => ({ kind: 'RELEASE', state: 'COMPENSATED', actor, height: 20, digest });
+  assert.deepEqual(verifyEffect(seal({ ...l, raw: [...undone, rel('g1approver', h('attempt 1 refused'))] })), { state: 'COMPENSATED', events: 6 });
+  assert.throws(() => verifyEffect(seal({ ...l, raw: [...undone, rel('g1exec', h('r'))] })), /release/);
+  assert.throws(() => verifyEffect(seal({ ...l, raw: [...undone, rel('g1approver', ZERO)] })), /release/);
+  assert.throws(() => verifyEffect(seal({ ...l, raw: [...undone, rel('g1approver', h('r')), rel('g1approver', h('r2'))] })), /release/);
+});
