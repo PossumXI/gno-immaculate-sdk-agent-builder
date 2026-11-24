@@ -12,6 +12,9 @@ import {
   execReceiptLeafHash,
   buildOrderedReceiptTree,
   verifyCrossChainCheckpoint,
+  encodeEffectEvent,
+  effectEventLeafHash,
+  verifyEffectLifecycleChain,
   merkleTreeHead,
   auditPath,
   verifyInclusion,
@@ -204,4 +207,134 @@ test('E14 cross-chain CanonicalCheckpoint and strictly ordered ExecutionReceipt 
     expectedReceiptsRoot: tree.root,
   });
   assert.equal(badOrder.verified, false);
+});
+
+test('verifyEffectLifecycleChain verifies partial-effect START -> STEP -> IN_DOUBT -> COMPENSATED offline and catches forgery', () => {
+  const step1Dig = sha256Hex('step1:uploaded');
+  const restoredDig = sha256Hex('state:original-restored');
+
+  const e1 = {
+    seq: 1,
+    prevHash: ZERO_DIGEST_HEX,
+    effectId: 'eff-1',
+    effectKey: 'deploy:prod',
+    idempotencyKey: 'idem-1',
+    kind: 'START',
+    state: 'STARTED',
+    stepIndex: 0,
+    totalSteps: 3,
+    actor: 'g1owner',
+    owner: 'g1owner',
+    reversalClass: 'COMPENSABLE',
+    stateChanged: false,
+    readbackDigest: ZERO_DIGEST_HEX,
+    supersedesId: '',
+    humanApproval: '',
+    deadlineHeight: 110,
+    height: 100,
+  };
+  const l1 = effectEventLeafHash(e1);
+  // Exact cross-language parity with Gno v1.8.0 TestEffectLifecycleAllSixAcceptanceTests
+  assert.equal(l1, '34a2d178d37aa8e5f952a774e5d872360ef361df689a9ed5b423601a5ff1122a');
+
+  const e2 = {
+    ...e1,
+    seq: 2,
+    prevHash: l1,
+    kind: 'STEP',
+    state: 'STARTED',
+    stepIndex: 1,
+    stateChanged: true,
+    readbackDigest: step1Dig,
+    height: 101,
+  };
+  const l2 = effectEventLeafHash(e2);
+
+  const e3 = {
+    ...e1,
+    seq: 3,
+    prevHash: l2,
+    kind: 'IN_DOUBT',
+    state: 'IN_DOUBT',
+    stepIndex: 1,
+    actor: 'g1observer',
+    height: 112,
+  };
+  const l3 = effectEventLeafHash(e3);
+
+  const e4 = {
+    seq: 4,
+    prevHash: l3,
+    effectId: 'eff-2',
+    effectKey: 'deploy:prod:compensate',
+    idempotencyKey: 'comp-1',
+    kind: 'COMPENSATE',
+    state: 'COMMITTED',
+    stepIndex: 1,
+    totalSteps: 1,
+    actor: 'g1owner',
+    owner: 'g1owner',
+    reversalClass: 'COMPENSABLE',
+    stateChanged: true,
+    readbackDigest: restoredDig,
+    supersedesId: 'eff-1',
+    humanApproval: '',
+    deadlineHeight: 116,
+    height: 115,
+  };
+  const l4 = effectEventLeafHash(e4);
+
+  const e5 = {
+    ...e1,
+    seq: 5,
+    prevHash: l4,
+    kind: 'COMPENSATE',
+    state: 'COMPENSATED',
+    stepIndex: 1,
+    actor: 'g1owner',
+    stateChanged: true,
+    readbackDigest: restoredDig,
+    supersedesId: 'eff-2',
+    height: 115,
+  };
+  const l5 = effectEventLeafHash(e5);
+  const rootHex = merkleTreeHead([l1, l2, l3, l4, l5]);
+
+  assert.ok(encodeEffectEvent(e1).length > 80);
+  const ok = verifyEffectLifecycleChain({
+    events: [e1, e2, e3, e4, e5],
+    rootHex,
+    targetEffectId: 'eff-1',
+    expectedFinalState: 'COMPENSATED',
+  });
+  assert.equal(ok.verified, true);
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.finalStates['eff-1'], 'COMPENSATED');
+
+  // Forged COMMITTED without readback must fail closed offline.
+  const badCommit = verifyEffectLifecycleChain({
+    events: [
+      e1,
+      {
+        ...e1,
+        seq: 2,
+        prevHash: l1,
+        kind: 'CLOSE',
+        state: 'COMMITTED',
+        stepIndex: 3,
+        stateChanged: false,
+        readbackDigest: ZERO_DIGEST_HEX,
+        height: 102,
+      },
+    ],
+  });
+  assert.equal(badCommit.verified, false);
+  assert.ok(badCommit.errors.some((e) => e.includes('COMMITTED requires stateChanged=true')));
+
+  // Forged IRREVERSIBLE START without human approval must fail closed offline.
+  const badIrr = verifyEffectLifecycleChain({
+    events: [{ ...e1, reversalClass: 'IRREVERSIBLE', humanApproval: '' }],
+  });
+  assert.equal(badIrr.verified, false);
+  assert.ok(badIrr.errors.some((e) => e.includes('IRREVERSIBLE effect started without humanApproval')));
 });
