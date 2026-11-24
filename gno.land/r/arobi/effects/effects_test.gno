@@ -23,10 +23,14 @@ const policyDigest = "1111111111111111111111111111111111111111111111111111111111
 
 func as(who address) { testing.SetRealm(testing.NewUserRealm(who)) }
 
-// register mints a passport for agentID owned by ownerAddr.
-func register(cur realm, agentID string) {
-	as(ownerAddr)
-	assurance.RegisterAgent(cross(cur), agentID, "Effects test agent", policyDigest, "")
+// register mints a passport for agentID owned by ownerAddr. The call into the other realm is made from a crossing
+// closure that first becomes the owner's user realm, as gno's own examples do, so the assurance realm sees a direct
+// user call.
+func register(cur realm, t *testing.T, agentID string) {
+	uassert.NotPanics(t, cur, func(cur realm) {
+		testing.SetRealm(testing.NewUserRealm(ownerAddr))
+		assurance.RegisterAgent(cross(cur), agentID, "Effects test agent", policyDigest, "")
+	})
 }
 
 func idString(id uint64) string { return strconv.FormatUint(id, 10) }
@@ -34,7 +38,7 @@ func idString(id uint64) string { return strconv.FormatUint(id, 10) }
 // Rule: deadlines are the clock's. A quiet executor's effect reads IN_DOUBT past its deadline, its steps are refused
 // under the old attempt, and the open list names its cleanup owner and the receipts that landed.
 func TestQuietExecutorIsInDoubtByTheClock(cur realm, t *testing.T) {
-	register(cur, "fx-quiet")
+	register(cur, t, "fx-quiet")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-quiet", "ledger:q", "q-1", 1, "COMPENSABLE", "restore the old values",
 		"q1,q2,q3", "a,b,c", 5, cleanupAddr, 0)
@@ -58,7 +62,7 @@ func TestQuietExecutorIsInDoubtByTheClock(cur realm, t *testing.T) {
 
 // Rule: one effect at a time per key; the refusal names the open effect.
 func TestAKeyWithAnOpenEffectRefusesANewStart(cur realm, t *testing.T) {
-	register(cur, "fx-fence")
+	register(cur, t, "fx-fence")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-fence", "ledger:f", "f-1", 1, "COMPENSABLE", "restore", "f1", "x", 5, cleanupAddr, 0)
 	as(ownerAddr)
@@ -70,7 +74,7 @@ func TestAKeyWithAnOpenEffectRefusesANewStart(cur realm, t *testing.T) {
 // Rule: "nothing seen" is IN_DOUBT until the effect is fenced; after the fence the same read-back is ABORTED, and a
 // retry is then a new attempt.
 func TestNothingSeenIsInDoubtUntilFenced(cur realm, t *testing.T) {
-	register(cur, "fx-noop")
+	register(cur, t, "fx-noop")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-noop", "ledger:n", "n-1", 1, "COMPENSABLE", "restore", "n1", "set", 10, cleanupAddr, 0)
 	as(ownerAddr)
@@ -97,7 +101,7 @@ func TestNothingSeenIsInDoubtUntilFenced(cur realm, t *testing.T) {
 
 // Rule: a close binds to its attempt and to a fresh read-back observed after the start.
 func TestAnExternalCloseIsBoundToItsAttemptAndReadBack(cur realm, t *testing.T) {
-	register(cur, "fx-ext")
+	register(cur, t, "fx-ext")
 	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
 	as(ownerAddr)
 	id := BeginEffect(cross(cur), "fx-ext", "deploy:site", "d-1", 1, 2, "COMPENSABLE", "redeploy the previous build",
@@ -119,7 +123,7 @@ func TestAnExternalCloseIsBoundToItsAttemptAndReadBack(cur realm, t *testing.T) 
 // Rule: IRREVERSIBLE is held at the start: without a recorded approval nothing is started and nothing is recorded.
 // The approval comes from the agent's approver, another account than the owner who runs the effect, and is used once.
 func TestIrreversibleNeedsARecordedApproval(cur realm, t *testing.T) {
-	register(cur, "fx-irr")
+	register(cur, t, "fx-irr")
 	count := EffectCount()
 	as(ownerAddr)
 	uassert.AbortsContains(t, cur, "human approval", func() {
@@ -148,7 +152,7 @@ func TestIrreversibleNeedsARecordedApproval(cur realm, t *testing.T) {
 
 // Rule: a retry with the same idempotency key never applies twice.
 func TestARetryOfACommittedEffectIsNotAppliedAgain(cur realm, t *testing.T) {
-	register(cur, "fx-idem")
+	register(cur, t, "fx-idem")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-idem", "ledger:i", "i-1", 1, "COMPENSABLE", "restore", "i1", "paid", 5, cleanupAddr, 0)
 	as(ownerAddr)
@@ -167,7 +171,7 @@ func TestARetryOfACommittedEffectIsNotAppliedAgain(cur realm, t *testing.T) {
 // Rules: compensation is its own effect, bounded, refused while paused; the original reads COMPENSATED only when
 // the compensation's read-back shows the pre-state.
 func TestCompensationIsBoundedAndHeldWhilePaused(cur realm, t *testing.T) {
-	register(cur, "fx-comp")
+	register(cur, t, "fx-comp")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-comp", "ledger:c", "c-1", 1, "COMPENSABLE", "restore", "c1,c2", "x,y", 5, cleanupAddr, 0)
 	as(ownerAddr)
@@ -198,7 +202,7 @@ func TestCompensationIsBoundedAndHeldWhilePaused(cur realm, t *testing.T) {
 // Rule 9: against a downstream that does not honour EffectLive, neither a fence nor the clock proves "no effect". A
 // pre-state read-back stays IN_DOUBT, an acceptance keeps the key held, and the undo needs the approver.
 func TestALandableEffectStaysInDoubtAndHoldsItsKey(cur realm, t *testing.T) {
-	register(cur, "fx-land")
+	register(cur, t, "fx-land")
 	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
 	as(ownerAddr)
 	id := BeginEffect(cross(cur), "fx-land", "mail:list", "l-1", 1, 1, "COMPENSABLE", "send a correction",
@@ -246,7 +250,7 @@ func TestALandableEffectStaysInDoubtAndHoldsItsKey(cur realm, t *testing.T) {
 // The same against a downstream that honours EffectLive: after the fence the pre-state read-back is ABORTED, and the
 // key is free again.
 func TestAHonouringDownstreamMakesAFencedNoEffectAborted(cur realm, t *testing.T) {
-	register(cur, "fx-live")
+	register(cur, t, "fx-live")
 	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
 	as(ownerAddr)
 	id := BeginEffect(cross(cur), "fx-live", "site:docs", "s-1", 1, 1, "COMPENSABLE", "redeploy", pre, post, true, 50, cleanupAddr, 0)
@@ -263,7 +267,7 @@ func TestAHonouringDownstreamMakesAFencedNoEffectAborted(cur realm, t *testing.T
 // ACCEPTED: an IN_DOUBT effect is fenced before a person accepts it, and nothing is accepted while its compensation
 // runs.
 func TestAcceptNeedsAFenceAndNoRunningCompensation(cur realm, t *testing.T) {
-	register(cur, "fx-acc")
+	register(cur, t, "fx-acc")
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-acc", "ledger:acc", "acc-1", 1, "COMPENSABLE", "restore", "acc1", "x", 3, cleanupAddr, 0)
 	as(ownerAddr)
