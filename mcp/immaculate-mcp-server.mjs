@@ -20,8 +20,11 @@ import {
 } from '../adapters/gnosh-adapter.mjs';
 import { UllumiiAssuranceBridge } from '../adapters/ullumii-adapter.mjs';
 import {
+  ZERO_DIGEST_HEX,
   verifyEvidenceBundle,
   verifyCrossChainCheckpoint,
+  effectEventLeafHash,
+  verifyEffectLifecycleChain,
   consistencyProof,
   verifyConsistencyProof,
   merkleTreeHead,
@@ -72,7 +75,89 @@ const state = {
   quarantinedMemories: [],
   nextMemoryId: 1,
   frameSeq: 0,
+  effects: new Map(),
+  openEffectsByKey: new Map(),
+  effectsByIdempotency: new Map(),
+  effectEvents: [],
+  effectLeaves: [],
+  effectLastHash: ZERO_DIGEST_HEX,
+  effectCount: 0,
 };
+
+const VALID_REVERSAL_CLASSES = new Set(['REVERSIBLE', 'COMPENSABLE', 'IRREVERSIBLE']);
+
+function resolveDigest(digestHex, rawPayload) {
+  if (typeof digestHex === 'string' && /^[0-9a-f]{64}$/.test(digestHex.trim())) {
+    return digestHex.trim();
+  }
+  if (rawPayload !== undefined && rawPayload !== null && String(rawPayload).length > 0) {
+    return sha256Hex(typeof rawPayload === 'string' ? rawPayload : JSON.stringify(rawPayload));
+  }
+  return ZERO_DIGEST_HEX;
+}
+
+function sealLifecycleEvent(ev) {
+  const full = {
+    seq: state.effectEvents.length + 1,
+    prevHash: state.effectLastHash,
+    effectId: ev.effectId,
+    effectKey: ev.effectKey,
+    idempotencyKey: ev.idempotencyKey,
+    kind: ev.kind,
+    state: ev.state,
+    stepIndex: Number(ev.stepIndex ?? 0),
+    totalSteps: Number(ev.totalSteps ?? 0),
+    actor: String(ev.actor || state.session.caller),
+    owner: String(ev.owner),
+    reversalClass: String(ev.reversalClass),
+    stateChanged: Boolean(ev.stateChanged),
+    readbackDigest: ev.readbackDigest || ZERO_DIGEST_HEX,
+    supersedesId: String(ev.supersedesId || ''),
+    humanApproval: String(ev.humanApproval || ''),
+    deadlineHeight: Number(ev.deadlineHeight ?? 0),
+    height: Number(ev.height ?? 0),
+  };
+  const leaf = effectEventLeafHash(full);
+  full.leafHash = leaf;
+  state.effectEvents.push(full);
+  state.effectLeaves.push(leaf);
+  state.effectLastHash = leaf;
+  return full;
+}
+
+function effectLifecycleRootHex() {
+  return merkleTreeHead(state.effectLeaves);
+}
+
+function sweepOverdueEffects(nowMs, actor = 'clock-sweep') {
+  const now = Number.isFinite(Number(nowMs)) ? Math.trunc(Number(nowMs)) : Date.now();
+  const transitioned = [];
+  for (const effectId of state.openEffectsByKey.values()) {
+    const rec = state.effects.get(effectId);
+    if (rec && rec.state === 'STARTED' && now >= rec.deadlineMs) {
+      rec.state = 'IN_DOUBT';
+      const ev = sealLifecycleEvent({
+        effectId: rec.id,
+        effectKey: rec.effectKey,
+        idempotencyKey: rec.idempotencyKey,
+        kind: 'IN_DOUBT',
+        state: 'IN_DOUBT',
+        stepIndex: rec.steps.length,
+        totalSteps: rec.totalSteps,
+        actor,
+        owner: rec.cleanupOwner,
+        reversalClass: rec.reversalClass,
+        stateChanged: false,
+        readbackDigest: ZERO_DIGEST_HEX,
+        deadlineHeight: rec.deadlineMs,
+        height: now,
+      });
+      rec.lastEventHash = ev.leafHash;
+      transitioned.push(rec.id);
+    }
+  }
+  return transitioned;
+}
 
 function normVec(v) {
   const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
@@ -244,9 +329,101 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'arobi_begin_effect',
+    description: 'Seal STARTED for a governed multi-step effect with mandatory deadline, cleanup owner (defaults to grant issuer), postcondition, and reversal class. Denies IRREVERSIBLE without human approval, deduplicates retries by idempotencyKey, and fences open effectKeys.',
+    inputSchema: {
+      type: 'object',
+      required: ['effectKey', 'idempotencyKey', 'totalSteps', 'postcondition', 'reversalClass'],
+      properties: {
+        effectKey: { type: 'string' },
+        idempotencyKey: { type: 'string' },
+        totalSteps: { type: 'number' },
+        postcondition: { type: 'string' },
+        reversalClass: { type: 'string', enum: ['REVERSIBLE', 'COMPENSABLE', 'IRREVERSIBLE'] },
+        undoSpec: { type: 'string' },
+        deadlineMs: { type: 'number' },
+        deadlineSeconds: { type: 'number' },
+        cleanupOwner: { type: 'string' },
+        grantIssuer: { type: 'string' },
+        humanApprovalId: { type: 'string' },
+        actor: { type: 'string' },
+        nowMs: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'arobi_record_step',
+    description: 'Seal one step receipt inside an active STARTED effect.',
+    inputSchema: {
+      type: 'object',
+      required: ['effectId', 'stepIndex', 'stepName'],
+      properties: {
+        effectId: { type: 'string' },
+        stepIndex: { type: 'number' },
+        stepName: { type: 'string' },
+        output: { type: 'string' },
+        outputDigest: { type: 'string' },
+        stateChanged: { type: 'boolean' },
+        actor: { type: 'string' },
+        nowMs: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'arobi_close_effect',
+    description: 'Close a STARTED or IN_DOUBT effect by verifying downstream read-back evidence instead of trusting exit 0. Exit 0 with no state change or missing read-back closes ABORTED or PARTIAL, never COMMITTED.',
+    inputSchema: {
+      type: 'object',
+      required: ['effectId'],
+      properties: {
+        effectId: { type: 'string' },
+        requestedOutcome: { type: 'string', enum: ['COMMITTED', 'ABORTED', 'PARTIAL'] },
+        readback: { type: 'string' },
+        readbackDigest: { type: 'string' },
+        stateChanged: { type: 'boolean' },
+        exitCode: { type: 'number' },
+        actor: { type: 'string' },
+        nowMs: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'arobi_list_open_effects',
+    description: 'Sweep overdue STARTED effects into IN_DOUBT by clock and list every open IN_DOUBT or PARTIAL obligation with its cleanup owner, age, and recorded step receipts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nowMs: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'arobi_compensate',
+    description: 'Seal a linked reversal effect for an IN_DOUBT or PARTIAL effect (requiring read-back confirming the restored state) or seal human AcceptPartial approval, releasing the effect-key fence.',
+    inputSchema: {
+      type: 'object',
+      required: ['originalEffectId'],
+      properties: {
+        originalEffectId: { type: 'string' },
+        compIdempotencyKey: { type: 'string' },
+        readback: { type: 'string' },
+        readbackDigest: { type: 'string' },
+        restoredOriginalState: { type: 'boolean' },
+        acceptPartial: { type: 'boolean' },
+        humanApprover: { type: 'string' },
+        reason: { type: 'string' },
+        actor: { type: 'string' },
+        nowMs: { type: 'number' },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args = {}) {
+  // Run overdue partial-effect sweep on every MCP call so quiet executors become IN_DOUBT by clock.
+  sweepOverdueEffects(args?.nowMs, 'mcp-clock-sweep');
+
   switch (name) {
     case 'governed_execute': {
       state.frameSeq += 1;
@@ -448,6 +625,519 @@ function handleToolCall(name, args = {}) {
         expectedReceiptRoot: args.expectedReceiptRoot,
         verifyIndex: args.verifyIndex,
       });
+    }
+
+    case 'arobi_begin_effect': {
+      const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
+      const effectKey = String(args.effectKey || '').trim();
+      const idempotencyKey = String(args.idempotencyKey || '').trim();
+      const totalSteps = Number(args.totalSteps ?? args.steps ?? 0);
+      const postcondition = String(args.postcondition || '').trim();
+      const reversalClass = String(args.reversalClass || '').trim();
+      const undoSpec = String(args.undoSpec || '').trim();
+      const humanApprovalId = String(args.humanApprovalId || '').trim();
+      const cleanupOwner = String(args.cleanupOwner || args.grantIssuer || state.session.caller || '').trim();
+      const actor = String(args.actor || state.session.caller);
+      const deadlineMs = args.deadlineMs !== undefined
+        ? Math.trunc(Number(args.deadlineMs))
+        : args.deadlineSeconds !== undefined
+          ? now + Math.trunc(Number(args.deadlineSeconds) * 1000)
+          : 0;
+
+      if (!effectKey || !idempotencyKey || !postcondition || !cleanupOwner) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'INCOMPLETE_EFFECT_SPEC',
+          message: 'effectKey, idempotencyKey, postcondition, and cleanupOwner are required',
+        };
+      }
+      if (!Number.isInteger(totalSteps) || totalSteps < 1 || totalSteps > 64) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'INVALID_TOTAL_STEPS',
+          message: 'totalSteps must be an integer between 1 and 64',
+        };
+      }
+      if (!Number.isFinite(deadlineMs) || deadlineMs <= now) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'MISSING_OR_PAST_DEADLINE',
+          message: 'deadlineMs must be strictly greater than start timestamp',
+        };
+      }
+      if (!VALID_REVERSAL_CLASSES.has(reversalClass)) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'INVALID_REVERSAL_CLASS',
+          message: 'reversalClass must be REVERSIBLE, COMPENSABLE, or IRREVERSIBLE',
+        };
+      }
+      if (reversalClass === 'IRREVERSIBLE' && !humanApprovalId) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'IRREVERSIBLE_REQUIRES_HUMAN_APPROVAL',
+          message: 'DENIED: IRREVERSIBLE effect requires prior human approval',
+        };
+      }
+      if ((reversalClass === 'REVERSIBLE' || reversalClass === 'COMPENSABLE') && !undoSpec) {
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'MISSING_UNDO_SPEC',
+          message: `${reversalClass} effect requires undoSpec`,
+        };
+      }
+
+      // Idempotency deduplication: retry with the same idempotencyKey does not apply twice.
+      if (state.effectsByIdempotency.has(idempotencyKey)) {
+        const existingId = state.effectsByIdempotency.get(idempotencyKey);
+        const existing = state.effects.get(existingId);
+        return {
+          allowed: true,
+          verdict: 'ALLOW',
+          deduplicated: true,
+          applied: false,
+          effectId: existing.id,
+          state: existing.state,
+          cleanupOwner: existing.cleanupOwner,
+          stepsRecorded: existing.steps.length,
+          totalSteps: existing.totalSteps,
+          rootHex: effectLifecycleRootHex(),
+        };
+      }
+
+      // Effect-key fencing: deny new authorize while an open effect holds this effectKey.
+      if (state.openEffectsByKey.has(effectKey)) {
+        const openId = state.openEffectsByKey.get(effectKey);
+        const open = state.effects.get(openId);
+        return {
+          allowed: false,
+          verdict: 'DENY',
+          reasonCode: 'EFFECT_KEY_FENCED',
+          openEffectId: open.id,
+          openState: open.state,
+          cleanupOwner: open.cleanupOwner,
+          message: `DENIED: effect key ${effectKey} is fenced by open effect ${open.id} (${open.state})`,
+        };
+      }
+
+      state.effectCount += 1;
+      const id = `eff-${state.effectCount}`;
+      const rec = {
+        id,
+        effectKey,
+        idempotencyKey,
+        state: 'STARTED',
+        totalSteps,
+        postcondition,
+        reversalClass,
+        undoSpec,
+        cleanupOwner,
+        humanApprovalId,
+        startMs: now,
+        deadlineMs,
+        closedMs: null,
+        steps: [],
+        readbackDigest: ZERO_DIGEST_HEX,
+        compensatedById: null,
+        supersedesId: '',
+        lastEventHash: ZERO_DIGEST_HEX,
+      };
+      const ev = sealLifecycleEvent({
+        effectId: rec.id,
+        effectKey: rec.effectKey,
+        idempotencyKey: rec.idempotencyKey,
+        kind: 'START',
+        state: 'STARTED',
+        stepIndex: 0,
+        totalSteps: rec.totalSteps,
+        actor,
+        owner: rec.cleanupOwner,
+        reversalClass: rec.reversalClass,
+        stateChanged: false,
+        readbackDigest: ZERO_DIGEST_HEX,
+        humanApproval: rec.humanApprovalId,
+        deadlineHeight: rec.deadlineMs,
+        height: now,
+      });
+      rec.lastEventHash = ev.leafHash;
+      state.effects.set(rec.id, rec);
+      state.openEffectsByKey.set(rec.effectKey, rec.id);
+      state.effectsByIdempotency.set(rec.idempotencyKey, rec.id);
+
+      return {
+        allowed: true,
+        verdict: 'ALLOW',
+        deduplicated: false,
+        applied: true,
+        effectId: rec.id,
+        state: rec.state,
+        cleanupOwner: rec.cleanupOwner,
+        deadlineMs: rec.deadlineMs,
+        rootHex: effectLifecycleRootHex(),
+        event: ev,
+      };
+    }
+
+    case 'arobi_record_step': {
+      const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
+      const effectId = String(args.effectId || '').trim();
+      const rec = state.effects.get(effectId);
+      if (!rec) throw new Error(`unknown effectId: ${effectId}`);
+      if (rec.state !== 'STARTED') {
+        return {
+          recorded: false,
+          effectId: rec.id,
+          state: rec.state,
+          reasonCode: rec.state === 'IN_DOUBT' ? 'EFFECT_DEADLINE_EXCEEDED' : 'EFFECT_NOT_STARTED',
+        };
+      }
+      const stepIndex = Number(args.stepIndex);
+      if (!Number.isInteger(stepIndex) || stepIndex < 1 || stepIndex > rec.totalSteps) {
+        throw new Error(`stepIndex ${stepIndex} out of bounds 1..${rec.totalSteps}`);
+      }
+      const existing = rec.steps.find((s) => s.stepIndex === stepIndex);
+      if (existing) {
+        return {
+          recorded: true,
+          deduplicated: true,
+          effectId: rec.id,
+          stepIndex,
+          totalSteps: rec.totalSteps,
+          state: rec.state,
+          receipt: existing,
+          rootHex: effectLifecycleRootHex(),
+        };
+      }
+      const outputDigest = resolveDigest(args.outputDigest, args.output);
+      const stateChanged = Boolean(args.stateChanged);
+      const ev = sealLifecycleEvent({
+        effectId: rec.id,
+        effectKey: rec.effectKey,
+        idempotencyKey: rec.idempotencyKey,
+        kind: 'STEP',
+        state: 'STARTED',
+        stepIndex,
+        totalSteps: rec.totalSteps,
+        actor: String(args.actor || state.session.caller),
+        owner: rec.cleanupOwner,
+        reversalClass: rec.reversalClass,
+        stateChanged,
+        readbackDigest: outputDigest,
+        deadlineHeight: rec.deadlineMs,
+        height: now,
+      });
+      const receipt = {
+        stepIndex,
+        totalSteps: rec.totalSteps,
+        stepName: String(args.stepName || `step-${stepIndex}`),
+        outputDigest,
+        stateChanged,
+        atMs: now,
+        leafHash: ev.leafHash,
+      };
+      rec.steps.push(receipt);
+      rec.lastEventHash = ev.leafHash;
+      return {
+        recorded: true,
+        deduplicated: false,
+        effectId: rec.id,
+        stepIndex,
+        totalSteps: rec.totalSteps,
+        state: rec.state,
+        receipt,
+        rootHex: effectLifecycleRootHex(),
+      };
+    }
+
+    case 'arobi_close_effect': {
+      const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
+      const effectId = String(args.effectId || '').trim();
+      const rec = state.effects.get(effectId);
+      if (!rec) throw new Error(`unknown effectId: ${effectId}`);
+      if (rec.state !== 'STARTED' && rec.state !== 'IN_DOUBT') {
+        throw new Error(`cannot close effect ${effectId} in state ${rec.state}`);
+      }
+      const requested = String(args.requestedOutcome || 'COMMITTED').trim();
+      if (!['COMMITTED', 'ABORTED', 'PARTIAL'].includes(requested)) {
+        throw new Error(`requestedOutcome must be COMMITTED, ABORTED, or PARTIAL`);
+      }
+      const readbackDigest = resolveDigest(args.readbackDigest, args.readback);
+      const stateChanged = Boolean(args.stateChanged);
+      const anyStepChanged = rec.steps.some((s) => s.stateChanged);
+
+      // Checked close: exit 0 with no read-back or unchanged state NEVER closes COMMITTED.
+      let finalState = requested;
+      if (requested === 'COMMITTED') {
+        if (!stateChanged || readbackDigest === ZERO_DIGEST_HEX) {
+          finalState = anyStepChanged ? 'PARTIAL' : 'ABORTED';
+        } else if (rec.steps.length < rec.totalSteps) {
+          finalState = 'PARTIAL';
+        }
+      } else if (requested === 'ABORTED' && anyStepChanged) {
+        finalState = 'PARTIAL';
+      }
+
+      rec.state = finalState;
+      rec.readbackDigest = readbackDigest;
+      rec.closedMs = now;
+      if (finalState === 'COMMITTED' || finalState === 'ABORTED') {
+        state.openEffectsByKey.delete(rec.effectKey);
+      }
+
+      const ev = sealLifecycleEvent({
+        effectId: rec.id,
+        effectKey: rec.effectKey,
+        idempotencyKey: rec.idempotencyKey,
+        kind: 'CLOSE',
+        state: finalState,
+        stepIndex: rec.steps.length,
+        totalSteps: rec.totalSteps,
+        actor: String(args.actor || state.session.caller),
+        owner: rec.cleanupOwner,
+        reversalClass: rec.reversalClass,
+        stateChanged: stateChanged || anyStepChanged,
+        readbackDigest,
+        deadlineHeight: rec.deadlineMs,
+        height: now,
+      });
+      rec.lastEventHash = ev.leafHash;
+
+      const rootHex = effectLifecycleRootHex();
+      const lifecycleBundle = {
+        events: state.effectEvents.map((e) => ({ ...e })),
+        rootHex,
+        targetEffectId: rec.id,
+        expectedFinalState: finalState,
+      };
+      const verified = verifyEffectLifecycleChain(lifecycleBundle);
+      return {
+        effectId: rec.id,
+        requestedOutcome: requested,
+        state: finalState,
+        fenced: state.openEffectsByKey.has(rec.effectKey),
+        readbackDigest,
+        rootHex,
+        verified: verified.verified,
+        lifecycleBundle,
+      };
+    }
+
+    case 'arobi_list_open_effects': {
+      const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
+      const obligations = [];
+      for (const effectId of state.openEffectsByKey.values()) {
+        const rec = state.effects.get(effectId);
+        if (rec && (rec.state === 'IN_DOUBT' || rec.state === 'PARTIAL')) {
+          obligations.push({
+            effectId: rec.id,
+            effectKey: rec.effectKey,
+            state: rec.state,
+            cleanupOwner: rec.cleanupOwner,
+            reversalClass: rec.reversalClass,
+            ageMs: Math.max(0, now - rec.startMs),
+            stepsRecorded: rec.steps.length,
+            totalSteps: rec.totalSteps,
+            steps: rec.steps,
+            deadlineMs: rec.deadlineMs,
+            postcondition: rec.postcondition,
+            undoSpec: rec.undoSpec,
+          });
+        }
+      }
+      return {
+        count: obligations.length,
+        obligations,
+        rootHex: effectLifecycleRootHex(),
+        eventCount: state.effectEvents.length,
+      };
+    }
+
+    case 'arobi_compensate': {
+      const now = Number.isFinite(Number(args.nowMs)) ? Math.trunc(Number(args.nowMs)) : Date.now();
+      const originalEffectId = String(args.originalEffectId || args.effectId || '').trim();
+      const orig = state.effects.get(originalEffectId);
+      if (!orig) throw new Error(`unknown effectId: ${originalEffectId}`);
+      if (orig.state !== 'IN_DOUBT' && orig.state !== 'PARTIAL') {
+        throw new Error(`only IN_DOUBT or PARTIAL effects may be compensated or accepted; state=${orig.state}`);
+      }
+
+      if (args.acceptPartial) {
+        const humanApprover = String(args.humanApprover || '').trim();
+        const reasonDigest = resolveDigest(args.readbackDigest, args.reason || args.readback);
+        if (!humanApprover || reasonDigest === ZERO_DIGEST_HEX) {
+          return {
+            accepted: false,
+            verdict: 'DENY',
+            reasonCode: 'HUMAN_APPROVAL_AND_REASON_REQUIRED',
+          };
+        }
+        orig.state = 'ACCEPTED';
+        orig.humanApprovalId = humanApprover;
+        orig.readbackDigest = reasonDigest;
+        orig.closedMs = now;
+        state.openEffectsByKey.delete(orig.effectKey);
+        const ev = sealLifecycleEvent({
+          effectId: orig.id,
+          effectKey: orig.effectKey,
+          idempotencyKey: orig.idempotencyKey,
+          kind: 'ACCEPT',
+          state: 'ACCEPTED',
+          stepIndex: orig.steps.length,
+          totalSteps: orig.totalSteps,
+          actor: humanApprover,
+          owner: orig.cleanupOwner,
+          reversalClass: orig.reversalClass,
+          stateChanged: false,
+          readbackDigest: reasonDigest,
+          humanApproval: humanApprover,
+          deadlineHeight: orig.deadlineMs,
+          height: now,
+        });
+        orig.lastEventHash = ev.leafHash;
+        const rootHex = effectLifecycleRootHex();
+        const lifecycleBundle = {
+          events: state.effectEvents.map((e) => ({ ...e })),
+          rootHex,
+          targetEffectId: orig.id,
+          expectedFinalState: 'ACCEPTED',
+        };
+        return {
+          accepted: true,
+          originalEffectId: orig.id,
+          state: 'ACCEPTED',
+          fenced: false,
+          rootHex,
+          verified: verifyEffectLifecycleChain(lifecycleBundle).verified,
+          lifecycleBundle,
+        };
+      }
+
+      if (orig.reversalClass === 'IRREVERSIBLE') {
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'IRREVERSIBLE_CANNOT_AUTO_COMPENSATE',
+          message: 'IRREVERSIBLE effect requires explicit human acceptPartial=true',
+        };
+      }
+      const readbackDigest = resolveDigest(args.readbackDigest, args.readback);
+      if (!args.restoredOriginalState || readbackDigest === ZERO_DIGEST_HEX) {
+        return {
+          compensated: false,
+          verdict: 'DENY',
+          reasonCode: 'RESTORED_READBACK_REQUIRED',
+          message: 'COMPENSATED requires restoredOriginalState=true and non-zero read-back confirming restored state',
+        };
+      }
+      const compIdem = String(args.compIdempotencyKey || `comp:${orig.id}`).trim();
+      if (state.effectsByIdempotency.has(compIdem)) {
+        const compId = state.effectsByIdempotency.get(compIdem);
+        return {
+          compensated: true,
+          deduplicated: true,
+          originalEffectId: orig.id,
+          compensationEffectId: compId,
+          state: orig.state,
+          fenced: state.openEffectsByKey.has(orig.effectKey),
+          rootHex: effectLifecycleRootHex(),
+        };
+      }
+
+      state.effectCount += 1;
+      const compId = `eff-${state.effectCount}`;
+      const actor = String(args.actor || orig.cleanupOwner);
+      const comp = {
+        id: compId,
+        effectKey: `${orig.effectKey}:compensate`,
+        idempotencyKey: compIdem,
+        state: 'COMMITTED',
+        totalSteps: 1,
+        postcondition: `restored state prior to ${orig.id}`,
+        reversalClass: 'COMPENSABLE',
+        undoSpec: orig.undoSpec,
+        cleanupOwner: orig.cleanupOwner,
+        humanApprovalId: '',
+        startMs: now,
+        deadlineMs: now + 1000,
+        closedMs: now,
+        steps: [],
+        readbackDigest,
+        compensatedById: null,
+        supersedesId: orig.id,
+        lastEventHash: ZERO_DIGEST_HEX,
+      };
+      const compEv = sealLifecycleEvent({
+        effectId: comp.id,
+        effectKey: comp.effectKey,
+        idempotencyKey: comp.idempotencyKey,
+        kind: 'COMPENSATE',
+        state: 'COMMITTED',
+        stepIndex: 1,
+        totalSteps: 1,
+        actor,
+        owner: comp.cleanupOwner,
+        reversalClass: comp.reversalClass,
+        stateChanged: true,
+        readbackDigest,
+        supersedesId: orig.id,
+        deadlineHeight: comp.deadlineMs,
+        height: now,
+      });
+      comp.lastEventHash = compEv.leafHash;
+      state.effects.set(comp.id, comp);
+      state.effectsByIdempotency.set(comp.idempotencyKey, comp.id);
+
+      orig.state = 'COMPENSATED';
+      orig.compensatedById = comp.id;
+      orig.readbackDigest = readbackDigest;
+      orig.closedMs = now;
+      state.openEffectsByKey.delete(orig.effectKey);
+
+      const origEv = sealLifecycleEvent({
+        effectId: orig.id,
+        effectKey: orig.effectKey,
+        idempotencyKey: orig.idempotencyKey,
+        kind: 'COMPENSATE',
+        state: 'COMPENSATED',
+        stepIndex: orig.steps.length,
+        totalSteps: orig.totalSteps,
+        actor,
+        owner: orig.cleanupOwner,
+        reversalClass: orig.reversalClass,
+        stateChanged: true,
+        readbackDigest,
+        supersedesId: comp.id,
+        deadlineHeight: orig.deadlineMs,
+        height: now,
+      });
+      orig.lastEventHash = origEv.leafHash;
+
+      const rootHex = effectLifecycleRootHex();
+      const lifecycleBundle = {
+        events: state.effectEvents.map((e) => ({ ...e })),
+        rootHex,
+        targetEffectId: orig.id,
+        expectedFinalState: 'COMPENSATED',
+      };
+      const verified = verifyEffectLifecycleChain(lifecycleBundle);
+      return {
+        compensated: true,
+        deduplicated: false,
+        originalEffectId: orig.id,
+        compensationEffectId: comp.id,
+        state: orig.state,
+        fenced: state.openEffectsByKey.has(orig.effectKey),
+        readbackDigest,
+        rootHex,
+        verified: verified.verified,
+        lifecycleBundle,
+      };
     }
 
     default:

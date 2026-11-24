@@ -19,6 +19,7 @@ export const DOMAIN_CLOSURE = 'arobi-assurance-effect-closure-v1';
 export const DOMAIN_ANCHOR = 'arobi-assurance-anchor-v1';
 export const DOMAIN_CHECKPOINT = 'arobi-checkpoint-v1';
 export const DOMAIN_EXEC_RECEIPT = 'arobi-exec-receipt-v1';
+export const DOMAIN_EFFECT_EVENT = 'arobi-assurance-effect-event-v1';
 export const ZERO_DIGEST_HEX = '0'.repeat(64);
 
 export function sha256(buf) {
@@ -491,12 +492,162 @@ export function verifyCrossChainCheckpoint({
   };
 }
 
+/**
+ * Canonical byte-for-byte twin of gno.land/p/arobi/assurance EffectEvent.Encode().
+ * Encodes one partial-effect lifecycle transition (START, STEP, CLOSE, IN_DOUBT, COMPENSATE, ACCEPT).
+ */
+export function encodeEffectEvent(e) {
+  return Buffer.concat([
+    encStr(DOMAIN_EFFECT_EVENT),
+    Buffer.from([ENCODING_VERSION]),
+    encU64(e.seq),
+    fromDigestHex(e.prevHash),
+    encStr(e.effectId),
+    encStr(e.effectKey),
+    encStr(e.idempotencyKey),
+    encStr(e.kind),
+    encStr(e.state),
+    encU32(e.stepIndex ?? 0),
+    encU32(e.totalSteps ?? 0),
+    encStr(e.actor),
+    encStr(e.owner),
+    encStr(e.reversalClass),
+    Buffer.from([e.stateChanged ? 1 : 0]),
+    fromDigestHex(e.readbackDigest ?? ZERO_DIGEST_HEX),
+    encStr(e.supersedesId ?? ''),
+    encStr(e.humanApproval ?? ''),
+    encI64(e.deadlineHeight ?? 0),
+    encI64(e.height ?? 0),
+  ]);
+}
+
+export function effectEventLeafHash(e) {
+  return leafHash(encodeEffectEvent(e)).toString('hex');
+}
+
+const VALID_REVERSAL_CLASSES = new Set(['REVERSIBLE', 'COMPENSABLE', 'IRREVERSIBLE']);
+
+/**
+ * Independently verify an entire partial-effect lifecycle hash chain & RFC 6962 accumulator offline.
+ * Checks hash-chain links, Merkle root, deadline proofs for IN_DOUBT, human approval for IRREVERSIBLE
+ * and ACCEPTED, read-back verification for COMMITTED, and linked reversal proof for COMPENSATED.
+ */
+export function verifyEffectLifecycleChain(bundle) {
+  const errors = [];
+  const events = Array.isArray(bundle) ? bundle : bundle?.events;
+  const expectedRoot = Array.isArray(bundle) ? null : (bundle?.expectedRootHex ?? bundle?.rootHex ?? null);
+  if (!Array.isArray(events) || events.length === 0) {
+    return { verified: false, rootHex: null, eventCount: 0, finalStates: {}, leaves: [], errors: ['lifecycle event list is empty'] };
+  }
+
+  const leaves = [];
+  const finalStates = {};
+  const committedCompensations = new Map();
+  let prevLeaf = ZERO_DIGEST_HEX;
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const expectedSeq = i + 1;
+    if (Number(ev.seq) !== expectedSeq) {
+      errors.push(`event[${i}] seq expected ${expectedSeq}, got ${ev.seq}`);
+    }
+    if (ev.prevHash !== prevLeaf) {
+      errors.push(`event[${i}] prevHash chain break`);
+    }
+    if (!ev.effectId || !ev.effectKey || !ev.idempotencyKey) {
+      errors.push(`event[${i}] missing effectId, effectKey, or idempotencyKey`);
+    }
+    if (!ev.owner) {
+      errors.push(`event[${i}] missing cleanup owner`);
+    }
+    if (!VALID_REVERSAL_CLASSES.has(ev.reversalClass)) {
+      errors.push(`event[${i}] invalid reversalClass: ${String(ev.reversalClass)}`);
+    }
+
+    const readback = ev.readbackDigest ?? ZERO_DIGEST_HEX;
+    if (ev.kind === 'START') {
+      if (BigInt(ev.deadlineHeight ?? 0) <= BigInt(ev.height ?? 0)) {
+        errors.push(`event[${i}] START deadline must be strictly greater than start height/timestamp`);
+      }
+      if (ev.reversalClass === 'IRREVERSIBLE' && !String(ev.humanApproval || '').trim()) {
+        errors.push(`event[${i}] IRREVERSIBLE effect started without humanApproval`);
+      }
+    } else if (ev.kind === 'IN_DOUBT') {
+      if (BigInt(ev.height ?? 0) < BigInt(ev.deadlineHeight ?? 0)) {
+        errors.push(`event[${i}] IN_DOUBT recorded before deadline`);
+      }
+    } else if (ev.kind === 'CLOSE' && ev.state === 'COMMITTED') {
+      if (!ev.stateChanged || readback === ZERO_DIGEST_HEX) {
+        errors.push(`event[${i}] COMMITTED requires stateChanged=true and non-zero readbackDigest`);
+      }
+      if (Number(ev.stepIndex ?? 0) < Number(ev.totalSteps ?? 1)) {
+        errors.push(`event[${i}] COMMITTED requires all declared steps recorded`);
+      }
+    } else if (ev.kind === 'COMPENSATE' && ev.state === 'COMMITTED') {
+      if (!ev.stateChanged || readback === ZERO_DIGEST_HEX || !ev.supersedesId) {
+        errors.push(`event[${i}] compensation commit missing supersedesId or non-zero restored readbackDigest`);
+      } else {
+        committedCompensations.set(ev.effectId, { supersedesId: ev.supersedesId, readbackDigest: readback });
+      }
+    } else if (ev.kind === 'COMPENSATE' && ev.state === 'COMPENSATED') {
+      if (!ev.supersedesId || !ev.stateChanged || readback === ZERO_DIGEST_HEX) {
+        errors.push(`event[${i}] COMPENSATED missing linked compensation id or restored readbackDigest`);
+      } else {
+        const linked = committedCompensations.get(ev.supersedesId);
+        if (!linked || linked.supersedesId !== ev.effectId || linked.readbackDigest !== readback) {
+          errors.push(`event[${i}] COMPENSATED linked reversal ${ev.supersedesId} not verified in chain`);
+        }
+      }
+    } else if (ev.kind === 'ACCEPT' && ev.state === 'ACCEPTED') {
+      if (!String(ev.humanApproval || '').trim() || readback === ZERO_DIGEST_HEX) {
+        errors.push(`event[${i}] ACCEPTED requires humanApproval and non-zero reason readbackDigest`);
+      }
+    }
+
+    let leaf;
+    try {
+      leaf = effectEventLeafHash(ev);
+    } catch (err) {
+      errors.push(`event[${i}] encode error: ${String(err.message || err)}`);
+      leaf = ZERO_DIGEST_HEX;
+    }
+    if (ev.leafHash && ev.leafHash !== leaf) {
+      errors.push(`event[${i}] leafHash mismatch`);
+    }
+    leaves.push(leaf);
+    prevLeaf = leaf;
+    finalStates[ev.effectId] = ev.state;
+  }
+
+  const rootHex = merkleTreeHead(leaves);
+  if (expectedRoot && rootHex !== expectedRoot) {
+    errors.push(`lifecycle RFC 6962 root mismatch: expected ${expectedRoot}, got ${rootHex}`);
+  }
+  if (!Array.isArray(bundle) && bundle?.targetEffectId && bundle?.expectedFinalState) {
+    const gotState = finalStates[bundle.targetEffectId];
+    if (gotState !== bundle.expectedFinalState) {
+      errors.push(`effect ${bundle.targetEffectId} final state expected ${bundle.expectedFinalState}, got ${gotState}`);
+    }
+  }
+
+  return {
+    verified: errors.length === 0,
+    rootHex,
+    eventCount: events.length,
+    finalStates,
+    leaves,
+    errors,
+  };
+}
+
 // CLI entrypoint
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('verify-evidence.mjs')) {
   const file = process.argv[2];
   if (file) {
     const bundle = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const res = verifyEvidenceBundle(bundle);
+    const res = Array.isArray(bundle?.events) && !bundle?.projection
+      ? verifyEffectLifecycleChain(bundle)
+      : verifyEvidenceBundle(bundle);
     console.log(JSON.stringify(res, null, 2));
     process.exit(res.verified ? 0 : 1);
   }
