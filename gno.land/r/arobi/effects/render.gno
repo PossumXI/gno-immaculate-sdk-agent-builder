@@ -119,6 +119,7 @@ func EffectJSON(effectID uint64) string {
 		`,"reversal":` + jsonString(string(s.Reversal)) +
 		`,"inverse":` + jsonString(s.Inverse) +
 		`,"read_back":` + jsonString(s.ReadBack) +
+		`,"downstream_honours_live":` + strconv.FormatBool(s.DownstreamHonoursLive) +
 		`,"pre_state":"` + sdk.Hex(s.PreState) + `"` +
 		`,"postcondition":"` + sdk.Hex(s.Postcondition) + `"` +
 		`,"deadline_blocks":` + strconv.FormatInt(s.DeadlineBlocks, 10) +

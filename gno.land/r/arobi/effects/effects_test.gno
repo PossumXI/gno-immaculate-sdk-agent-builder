@@ -14,8 +14,9 @@ import (
 
 var (
 	ownerAddr   = testutils.TestAddress("effects-agent-owner")
-	cleanupAddr = testutils.TestAddress("effects-cleanup-owner")
-	otherAddr   = testutils.TestAddress("effects-stranger")
+	cleanupAddr  = testutils.TestAddress("effects-cleanup-owner")
+	otherAddr    = testutils.TestAddress("effects-stranger")
+	approverAddr = testutils.TestAddress("effects-approver")
 )
 
 const policyDigest = "1111111111111111111111111111111111111111111111111111111111111111"
@@ -100,7 +101,7 @@ func TestAnExternalCloseIsBoundToItsAttemptAndReadBack(cur realm, t *testing.T) 
 	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
 	as(ownerAddr)
 	id := BeginEffect(cross(cur), "fx-ext", "deploy:site", "d-1", 1, 2, "COMPENSABLE", "redeploy the previous build",
-		pre, post, 50, cleanupAddr, 0)
+		pre, post, true, 50, cleanupAddr, 0)
 	as(ownerAddr)
 	RecordStep(cross(cur), id, 1, 1, sdk.Hex(sdk.HashString("upload")))
 	now := runtime.ChainHeight()
@@ -115,8 +116,8 @@ func TestAnExternalCloseIsBoundToItsAttemptAndReadBack(cur realm, t *testing.T) 
 	uassert.Equal(t, "COMMITTED", VerifyEffect(id))
 }
 
-// Rule: IRREVERSIBLE is held at the start: without the owner's recorded approval nothing is started and nothing is
-// recorded; with it, the approval is used once.
+// Rule: IRREVERSIBLE is held at the start: without a recorded approval nothing is started and nothing is recorded.
+// The approval comes from the agent's approver, another account than the owner who runs the effect, and is used once.
 func TestIrreversibleNeedsARecordedApproval(cur realm, t *testing.T) {
 	register(cur, "fx-irr")
 	count := EffectCount()
@@ -125,7 +126,14 @@ func TestIrreversibleNeedsARecordedApproval(cur realm, t *testing.T) {
 		BeginDemoEffect(cross(cur), "fx-irr", "mail:all", "m-1", 1, "IRREVERSIBLE", "", "m1", "sent", 5, cleanupAddr, 0)
 	})
 	uassert.Equal(t, count, EffectCount())
+	// The owner cannot approve its own effects, nor name itself as the approver.
 	as(ownerAddr)
+	uassert.AbortsContains(t, cur, "approver (SetApprover)", func() { ApproveEffect(cross(cur), "fx-irr", "mail:all", DemoDigest("m1", "sent")) })
+	as(ownerAddr)
+	uassert.AbortsContains(t, cur, "other than the agent's owner", func() { SetApprover(cross(cur), "fx-irr", ownerAddr) })
+	as(ownerAddr)
+	SetApprover(cross(cur), "fx-irr", approverAddr)
+	as(approverAddr)
 	appr := ApproveEffect(cross(cur), "fx-irr", "mail:all", DemoDigest("m1", "sent"))
 	as(ownerAddr)
 	id := BeginDemoEffect(cross(cur), "fx-irr", "mail:all", "m-1", 1, "IRREVERSIBLE", "", "m1", "sent", 5, cleanupAddr, appr)
@@ -185,4 +193,94 @@ func TestCompensationIsBoundedAndHeldWhilePaused(cur realm, t *testing.T) {
 	uassert.Equal(t, "", DemoValue("c1"))
 	uassert.Equal(t, "COMPENSATED", VerifyEffect(id))
 	uassert.Equal(t, "COMMITTED", VerifyEffect(comp))
+}
+
+// Rule 9: against a downstream that does not honour EffectLive, neither a fence nor the clock proves "no effect". A
+// pre-state read-back stays IN_DOUBT, an acceptance keeps the key held, and the undo needs the approver.
+func TestALandableEffectStaysInDoubtAndHoldsItsKey(cur realm, t *testing.T) {
+	register(cur, "fx-land")
+	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
+	as(ownerAddr)
+	id := BeginEffect(cross(cur), "fx-land", "mail:list", "l-1", 1, 1, "COMPENSABLE", "send a correction",
+		pre, post, false, 50, cleanupAddr, 0)
+	as(ownerAddr)
+	RecordStep(cross(cur), id, 1, 1, sdk.Hex(sdk.HashString("queued")))
+	as(ownerAddr)
+	FenceEffect(cross(cur), id, 1)
+	testing.SkipHeights(1)
+	now := runtime.ChainHeight()
+	as(ownerAddr)
+	uassert.Equal(t, "IN_DOUBT", CloseEffect(cross(cur), id, 1, pre, now))
+	uassert.Equal(t, "IN_DOUBT", VerifyEffect(id))
+	// The undo now needs the approver's approval for this key, with the original's pre-state as its postcondition.
+	as(cleanupAddr)
+	uassert.AbortsContains(t, cur, "needs ApproveEffect", func() { Compensate(cross(cur), id, 1, post, 20, 0) })
+	as(ownerAddr)
+	SetApprover(cross(cur), "fx-land", approverAddr)
+	as(approverAddr)
+	appr := ApproveEffect(cross(cur), "fx-land", "mail:list", pre)
+	as(cleanupAddr)
+	comp := Compensate(cross(cur), id, 1, post, 20, appr)
+	uassert.True(t, strings.Contains(EffectJSON(id), `"link":`+idString(comp)))
+	uassert.Equal(t, "IN_DOUBT", VerifyEffect(id))
+	// The compensation fails (its read-back is neither state). The original is not accepted while that failed
+	// compensation is open; a person accepts the compensation's outcome first, then the original's.
+	as(cleanupAddr)
+	RecordStep(cross(cur), comp, 1, 1, sdk.Hex(sdk.HashString("correction queued")))
+	as(cleanupAddr)
+	uassert.Equal(t, "PARTIAL", CloseEffect(cross(cur), comp, 1, sdk.Hex(sdk.HashString("half")), runtime.ChainHeight()))
+	as(cleanupAddr)
+	uassert.AbortsContains(t, cur, "running", func() { AcceptEffect(cross(cur), id, sdk.Hex(sdk.HashString("reviewed by a person"))) })
+	as(cleanupAddr)
+	AcceptEffect(cross(cur), comp, sdk.Hex(sdk.HashString("reviewed by a person")))
+	as(cleanupAddr)
+	AcceptEffect(cross(cur), id, sdk.Hex(sdk.HashString("reviewed by a person")))
+	uassert.Equal(t, "ACCEPTED", EffectState(id))
+	// Accepted, yet it may still land: the key stays held.
+	as(ownerAddr)
+	uassert.AbortsContains(t, cur, "may still land", func() {
+		BeginEffect(cross(cur), "fx-land", "mail:list", "l-2", 1, 1, "COMPENSABLE", "send a correction", pre, post, false, 50, cleanupAddr, 0)
+	})
+}
+
+// The same against a downstream that honours EffectLive: after the fence the pre-state read-back is ABORTED, and the
+// key is free again.
+func TestAHonouringDownstreamMakesAFencedNoEffectAborted(cur realm, t *testing.T) {
+	register(cur, "fx-live")
+	pre, post := sdk.Hex(sdk.HashString("before")), sdk.Hex(sdk.HashString("after"))
+	as(ownerAddr)
+	id := BeginEffect(cross(cur), "fx-live", "site:docs", "s-1", 1, 1, "COMPENSABLE", "redeploy", pre, post, true, 50, cleanupAddr, 0)
+	as(ownerAddr)
+	FenceEffect(cross(cur), id, 1)
+	testing.SkipHeights(1)
+	as(ownerAddr)
+	uassert.Equal(t, "ABORTED", CloseEffect(cross(cur), id, 1, pre, runtime.ChainHeight()))
+	as(ownerAddr)
+	again := BeginEffect(cross(cur), "fx-live", "site:docs", "s-1", 2, 1, "COMPENSABLE", "redeploy", pre, post, true, 50, cleanupAddr, 0)
+	uassert.True(t, again != id)
+}
+
+// ACCEPTED: an IN_DOUBT effect is fenced before a person accepts it, and nothing is accepted while its compensation
+// runs.
+func TestAcceptNeedsAFenceAndNoRunningCompensation(cur realm, t *testing.T) {
+	register(cur, "fx-acc")
+	as(ownerAddr)
+	id := BeginDemoEffect(cross(cur), "fx-acc", "ledger:acc", "acc-1", 1, "COMPENSABLE", "restore", "acc1", "x", 3, cleanupAddr, 0)
+	as(ownerAddr)
+	DemoStep(cross(cur), id, 1, 1, "x")
+	testing.SkipHeights(4)
+	as(cleanupAddr)
+	uassert.AbortsContains(t, cur, "FenceEffect first", func() { AcceptEffect(cross(cur), id, sdk.Hex(sdk.HashString("ok"))) })
+	as(cleanupAddr)
+	FenceEffect(cross(cur), id, 1)
+	as(cleanupAddr)
+	comp := CompensateDemo(cross(cur), id, 5)
+	as(cleanupAddr)
+	uassert.AbortsContains(t, cur, "running", func() { AcceptEffect(cross(cur), id, sdk.Hex(sdk.HashString("ok"))) })
+	as(cleanupAddr)
+	DemoStep(cross(cur), comp, 1, 1, "")
+	as(cleanupAddr)
+	uassert.Equal(t, "COMMITTED", CloseDemoEffect(cross(cur), comp, 1))
+	uassert.Equal(t, "COMPENSATED", EffectState(id))
+	uassert.Equal(t, "COMPENSATED", VerifyEffect(id))
 }

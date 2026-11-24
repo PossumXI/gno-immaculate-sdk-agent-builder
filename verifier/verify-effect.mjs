@@ -43,7 +43,8 @@ export const leafHash = (data) => sha256(Buffer.concat([Buffer.from([0x00]), dat
 export function encodeSpec(s) {
   return Buffer.concat([
     str(DOMAIN_EFFECT_SPEC), Buffer.from([ENCODING_VERSION]), str(s.agent_id), str(s.effect_key), str(s.idempotency_key),
-    u32(s.attempt), u32(s.steps), str(s.reversal), str(s.inverse), str(s.read_back), dig(s.pre_state), dig(s.postcondition),
+    u32(s.attempt), u32(s.steps), str(s.reversal), str(s.inverse), str(s.read_back),
+    Buffer.from([s.downstream_honours_live ? 1 : 0]), dig(s.pre_state), dig(s.postcondition),
     u64(s.deadline_blocks), str(s.cleanup_owner), u64(s.approval_id), u64(s.compensates),
   ]);
 }
@@ -64,16 +65,21 @@ export function validateSpec(s) {
   if (s.deadline_blocks < 1 || s.deadline_blocks > MAX_EFFECT_DEADLINE_BLOCKS) fail('a deadline is required');
   if (!s.cleanup_owner) fail('a cleanup owner is required');
   if (s.read_back !== 'REALM' && s.read_back !== 'AGENT') fail('read-back must be REALM or AGENT');
+  if (typeof s.downstream_honours_live !== 'boolean') fail('downstream_honours_live must be true or false');
+  if (s.read_back === 'REALM' && !s.downstream_honours_live) fail("a realm read-back's downstream is the realm, which honours EffectLive");
   if (s.pre_state === s.postcondition) fail('the postcondition equals the pre-state');
   if (s.reversal === 'REVERSIBLE' || s.reversal === 'COMPENSABLE') {
     if (!s.inverse) fail(`a ${s.reversal} effect names how it is undone`);
-    if (s.approval_id !== 0) fail('only an IRREVERSIBLE effect consumes an approval');
+    if (s.approval_id !== 0 && s.compensates === 0) fail('only an IRREVERSIBLE effect, or the compensation of an effect that may still land, consumes an approval');
   } else if (s.reversal === 'IRREVERSIBLE') {
     if (s.inverse) fail('an IRREVERSIBLE effect has no inverse');
     if (s.approval_id === 0) fail('an IRREVERSIBLE effect needs a recorded human approval');
     if (s.compensates !== 0) fail('a compensation cannot be IRREVERSIBLE');
   } else fail('unknown reversal class');
 }
+
+/** Something sent under the effect may still land after a fence or the deadline (EffectSpec.Landable). */
+export const landable = (s) => s.read_back === 'AGENT' && !s.downstream_honours_live;
 
 export function closeOutcome(s, readBack, fencedBeforeRead) {
   if (readBack === s.postcondition) return 'COMMITTED';
@@ -125,7 +131,8 @@ export function verifyLife(id, s, events) {
           if (ev.observed_height < lastStepHeight || ev.observed_height > ev.height || ev.height - ev.observed_height > MAX_READ_BACK_AGE_BLOCKS) {
             throw new Error(at + 'the read-back is older than the last step, from the future, or too old');
           }
-          fencedBefore = (fenced && ev.observed_height > fenceHeight) || ev.observed_height > deadline;
+          // A fence or the clock proves nothing about a downstream that does not honour EffectLive.
+          fencedBefore = !landable(s) && ((fenced && ev.observed_height > fenceHeight) || ev.observed_height > deadline);
         }
         if (ev.digest === ZERO) throw new Error(at + 'a close needs a read-back digest');
         next = closeOutcome(s, ev.digest, fencedBefore);
@@ -140,6 +147,9 @@ export function verifyLife(id, s, events) {
           throw new Error(at + 'is not a compensation the cleanup owner may start here');
         }
         if (++comps > MAX_COMPENSATIONS) throw new Error(at + 'more compensations than allowed');
+        if (landable(s) && state !== 'COMMITTED' && ev.digest === ZERO) {
+          throw new Error(at + "compensates an effect that may still land without the owner's recorded approval");
+        }
         links.add(ev.link);
         break;
       case 'COMPENSATED':
@@ -147,7 +157,9 @@ export function verifyLife(id, s, events) {
         next = 'COMPENSATED';
         break;
       case 'ACCEPT':
-        if (ev.actor !== s.cleanup_owner || (state !== 'PARTIAL' && state !== 'IN_DOUBT')) throw new Error(at + 'is not an acceptance the cleanup owner may make here');
+        if (ev.actor !== s.cleanup_owner || (state !== 'PARTIAL' && state !== 'IN_DOUBT') || (state === 'IN_DOUBT' && !fenced)) {
+          throw new Error(at + 'is not an acceptance the cleanup owner may make here (an IN_DOUBT effect is fenced first)');
+        }
         next = 'ACCEPTED';
         break;
       default:

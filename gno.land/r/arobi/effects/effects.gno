@@ -12,9 +12,10 @@
 //     the digests the start declared; it cannot see that downstream, and a fence binds only what honours it (the
 //     downstream checks EffectLive before it applies anything).
 //
-// Only the agent's owner (its passport in gno.land/r/arobi/assurance) starts its effects, and an IRREVERSIBLE effect
-// needs the owner's recorded approval, as a separate call, before it starts. MarkInDoubt is open to anyone and
-// changes nothing but the effect's state: it moves no value.
+// Only the agent's owner (its passport in gno.land/r/arobi/assurance) starts its effects. An IRREVERSIBLE effect needs
+// a recorded approval, as a separate call, from the agent's approver: an account the owner names that is not the owner
+// itself, so the key that runs an effect never approves it. MarkInDoubt is open to anyone and changes nothing but the
+// effect's state: it moves no value.
 package effects
 
 import (
@@ -81,25 +82,67 @@ var (
 	active        = avl.NewTree() // key(id) -> id, for effects that are not closed
 	approvals     = avl.NewTree() // key(id) -> *approval
 	approvalCount uint64
+	approvers     = avl.NewTree() // agentID -> address that approves (never the owner who runs the effects)
 	paused        = avl.NewTree() // agentID -> true while the owner has paused the agent's effects
 	evidence      sdk.LedgerAccumulator
 	demoState     = avl.NewTree() // demo key -> value
 )
 
-// ── Approvals and pauses (the agent's owner) ─────────────────────────────────
+// ── Approvals and pauses ─────────────────────────────────────────────────────
 
-// ApproveEffect records the agent owner's approval of one IRREVERSIBLE effect: on this key, with this postcondition,
-// used once. The start that consumes it is a separate call.
-func ApproveEffect(cur realm, agentID, effectKey, postconditionHex string) uint64 {
+// SetApprover names the account that approves the agent's IRREVERSIBLE effects, and the undo of its effects that may
+// still land. The agent's owner sets it, and it must be another account: the key that runs an effect never approves
+// it. Changing it voids every unused approval the previous approver gave.
+func SetApprover(cur realm, agentID string, approver address) {
 	owner := mustOwner(cur, agentID)
+	if !approver.IsValid() || approver == owner {
+		panic("the approver must be a valid account other than the agent's owner")
+	}
+	approvers.Set(agentID, approver)
+	chain.Emit("ImmaculateEffectApproverSet", "agent_id", agentID, "approver", approver.String())
+}
+
+// ApproveEffect records the approver's approval of one effect of the agent: on this key, with this postcondition,
+// used once, by a start (IRREVERSIBLE) or a compensation (of an effect that may still land) that is a separate call.
+func ApproveEffect(cur realm, agentID, effectKey, postconditionHex string) uint64 {
+	caller := mustUser(cur)
+	if approver, ok := approvers.Get(agentID).(address); !ok || approver != caller {
+		panic("only agent " + agentID + "'s approver (SetApprover) approves its effects")
+	}
 	mustKey("effectKey", effectKey)
 	post := mustDigest("postconditionHex", postconditionHex)
 	approvalCount++
 	approvals.Set(key(approvalCount), &approval{
-		ID: approvalCount, AgentID: agentID, EffectKey: effectKey, Postcondition: post, Approver: owner, Height: runtime.ChainHeight(),
+		ID: approvalCount, AgentID: agentID, EffectKey: effectKey, Postcondition: post, Approver: caller, Height: runtime.ChainHeight(),
 	})
 	chain.Emit("ImmaculateEffectApproved", "approval_id", strconv.FormatUint(approvalCount, 10), "agent_id", agentID, "effect_key", effectKey)
 	return approvalCount
+}
+
+// useApproval consumes an approval for exactly this agent, key and postcondition, given by the agent's current
+// approver, who is not the executor. It returns the approval's digest, which the sealed event carries.
+func useApproval(id uint64, agentID, effectKey string, postcondition [32]byte, executor address) [32]byte {
+	a := mustApproval(id)
+	approver, ok := approvers.Get(agentID).(address)
+	switch {
+	case a.Used:
+		panic("approval " + strconv.FormatUint(a.ID, 10) + " is used")
+	case a.AgentID != agentID || a.EffectKey != effectKey || a.Postcondition != postcondition:
+		panic("approval " + strconv.FormatUint(a.ID, 10) + " was given for another agent, key or postcondition")
+	case !ok || a.Approver != approver:
+		panic("approval " + strconv.FormatUint(a.ID, 10) + " is not from agent " + agentID + "'s current approver")
+	case a.Approver == executor:
+		panic("approval " + strconv.FormatUint(a.ID, 10) + " is from the executor itself")
+	}
+	a.Used = true
+	out := lenPrefixed(nil, "arobi-effects-approval-v1")
+	out = binary.BigEndian.AppendUint64(out, a.ID)
+	out = lenPrefixed(out, a.AgentID)
+	out = lenPrefixed(out, a.EffectKey)
+	out = append(out, a.Postcondition[:]...)
+	out = lenPrefixed(out, a.Approver.String())
+	out = binary.BigEndian.AppendUint64(out, uint64(a.Height))
+	return sdk.HashBytes(out)
 }
 
 // PauseEffects stops the agent's new starts, steps and compensations until ResumeEffects. Detection does not pause:
@@ -120,14 +163,19 @@ func ResumeEffects(cur realm, agentID string) {
 // ── Starting an effect ───────────────────────────────────────────────────────
 
 // BeginEffect starts an external effect: one acting outside the chain, read back by the agent.
+// downstreamHonoursLive declares that the downstream checks EffectLive in the same step that applies anything (or
+// keeps its own record of the attempts it consumed). When it is false, nothing the realm records can prove "no
+// effect": a pre-state read-back stays IN_DOUBT, ACCEPTED keeps the key held, and a compensation while the effect is
+// IN_DOUBT or PARTIAL needs the owner's approval.
 func BeginEffect(cur realm, agentID, effectKey, idempotencyKey string, attempt, steps int, reversal, inverse,
-	preStateHex, postconditionHex string, deadlineBlocks int64, cleanupOwner address, approvalID uint64,
+	preStateHex, postconditionHex string, downstreamHonoursLive bool, deadlineBlocks int64, cleanupOwner address, approvalID uint64,
 ) uint64 {
 	executor := mustOwner(cur, agentID)
 	spec := sdk.EffectSpec{
 		AgentID: agentID, EffectKey: effectKey, IdempotencyKey: idempotencyKey, Attempt: mustCount("attempt", attempt),
 		Steps: mustCount("steps", steps), Reversal: sdk.ReversalClass(reversal), Inverse: inverse, ReadBack: sdk.ReadBackAgent,
-		PreState: mustDigest("preStateHex", preStateHex), Postcondition: mustDigest("postconditionHex", postconditionHex),
+		DownstreamHonoursLive: downstreamHonoursLive,
+		PreState:              mustDigest("preStateHex", preStateHex), Postcondition: mustDigest("postconditionHex", postconditionHex),
 		DeadlineBlocks: deadlineBlocks, CleanupOwner: mustAddress("cleanupOwner", cleanupOwner), ApprovalID: approvalID,
 	}
 	return begin(spec, executor, nil, nil, nil)
@@ -145,7 +193,8 @@ func BeginDemoEffect(cur realm, agentID, effectKey, idempotencyKey string, attem
 	spec := sdk.EffectSpec{
 		AgentID: agentID, EffectKey: effectKey, IdempotencyKey: idempotencyKey, Attempt: mustCount("attempt", attempt),
 		Steps: uint32(len(keys)), Reversal: sdk.ReversalClass(reversal), Inverse: inverse, ReadBack: sdk.ReadBackRealm,
-		PreState: demoDigest(keys, prior), Postcondition: demoDigest(keys, values),
+		DownstreamHonoursLive: true, // the realm is the downstream, and it refuses every step after a fence or the deadline
+		PreState:              demoDigest(keys, prior), Postcondition: demoDigest(keys, values),
 		DeadlineBlocks: deadlineBlocks, CleanupOwner: mustAddress("cleanupOwner", cleanupOwner), ApprovalID: approvalID,
 	}
 	return begin(spec, executor, keys, values, prior)
@@ -187,20 +236,22 @@ func begin(spec sdk.EffectSpec, executor address, keys, values, prior []string) 
 			panic("the first try is attempt 1")
 		}
 	}
-	// One effect at a time per key: a compensation may run while the effect it undoes holds the key.
+	// One effect at a time per key: a compensation may run while the effect it undoes holds the key. An ACCEPTED
+	// effect that may still land keeps holding it.
 	kk := pair(spec.AgentID, spec.EffectKey)
 	if holderID, ok := holders.Get(kk).(uint64); ok {
 		h := mustEffect(holderID)
-		if st := effectiveState(h, height); !st.Closed() && h.ID != spec.Compensates {
-			panic("effect key " + spec.EffectKey + " has open effect " + strconv.FormatUint(h.ID, 10) + " (" + string(st) + ")")
+		st := effectiveState(h, height)
+		if h.ID != spec.Compensates && (!st.Closed() || holdsKey(h)) {
+			why := string(st)
+			if st.Closed() {
+				why += ", and it may still land"
+			}
+			panic("effect key " + spec.EffectKey + " has open effect " + strconv.FormatUint(h.ID, 10) + " (" + why + ")")
 		}
 	}
 	if spec.Reversal == sdk.ReversalIrreversible {
-		a := mustApproval(spec.ApprovalID)
-		if a.Used || a.AgentID != spec.AgentID || a.EffectKey != spec.EffectKey || a.Postcondition != spec.Postcondition {
-			panic("approval " + strconv.FormatUint(a.ID, 10) + " is used, or was given for another agent, key or postcondition")
-		}
-		a.Used = true
+		useApproval(spec.ApprovalID, spec.AgentID, spec.EffectKey, spec.Postcondition, executor)
 	}
 	effectCount++
 	e := &effect{
@@ -313,7 +364,8 @@ func closeWith(cur realm, e *effect, attempt int, readBack [32]byte, observed in
 			panic("the read-back must be observed after the last step, not in the future, and at most " +
 				strconv.FormatInt(sdk.MaxReadBackAgeBlocks, 10) + " blocks ago")
 		}
-		fencedBefore = (e.Fenced && observed > e.FenceHeight) || observed > deadline
+		// A fence or the clock proves "nothing can still land" only to a downstream that honours EffectLive.
+		fencedBefore = !e.Spec.Landable() && ((e.Fenced && observed > e.FenceHeight) || observed > deadline)
 	}
 	if readBack == sdk.ZeroDigest() {
 		panic("a close needs a read-back digest")
@@ -346,14 +398,16 @@ func MarkInDoubt(cur realm, effectID uint64) string {
 // ── Owning and undoing it (the cleanup owner) ────────────────────────────────
 
 // Compensate starts the compensation of an external effect: an effect of its own, on the same key, whose
-// postcondition is the original's pre-state. preStateHex is the downstream state now.
-func Compensate(cur realm, effectID uint64, steps int, preStateHex string, deadlineBlocks int64) uint64 {
+// postcondition is the original's pre-state. preStateHex is the downstream state now. When the original may still
+// land (its downstream does not honour EffectLive) and is IN_DOUBT or PARTIAL, approvalID names the owner's
+// ApproveEffect for this undo (the original's key, with the original's pre-state as the postcondition); otherwise 0.
+func Compensate(cur realm, effectID uint64, steps int, preStateHex string, deadlineBlocks int64, approvalID uint64) uint64 {
 	orig := mustEffect(effectID)
 	if orig.Spec.ReadBack != sdk.ReadBackAgent {
 		panic("a demo effect is compensated with CompensateDemo")
 	}
 	actor := mustCleanupOwner(cur, orig)
-	return startCompensation(orig, actor, mustCount("steps", steps), mustDigest("preStateHex", preStateHex), deadlineBlocks, nil, nil, nil)
+	return startCompensation(orig, actor, mustCount("steps", steps), mustDigest("preStateHex", preStateHex), deadlineBlocks, approvalID, nil, nil, nil)
 }
 
 // CompensateDemo starts the compensation of a demo effect: its steps write back the values the keys held before the
@@ -365,11 +419,11 @@ func CompensateDemo(cur realm, effectID uint64, deadlineBlocks int64) uint64 {
 	}
 	actor := mustCleanupOwner(cur, orig)
 	now := demoRead(orig.DemoKeys)
-	return startCompensation(orig, actor, uint32(len(orig.DemoKeys)), demoDigest(orig.DemoKeys, now), deadlineBlocks,
+	return startCompensation(orig, actor, uint32(len(orig.DemoKeys)), demoDigest(orig.DemoKeys, now), deadlineBlocks, 0,
 		orig.DemoKeys, orig.DemoPrior, now)
 }
 
-func startCompensation(orig *effect, actor address, steps uint32, pre [32]byte, deadlineBlocks int64, keys, targets, prior []string) uint64 {
+func startCompensation(orig *effect, actor address, steps uint32, pre [32]byte, deadlineBlocks int64, approvalID uint64, keys, targets, prior []string) uint64 {
 	height := runtime.ChainHeight()
 	st := effectiveState(orig, height)
 	owner, live := assurance.AgentOwner(orig.Spec.AgentID)
@@ -392,6 +446,17 @@ func startCompensation(orig *effect, actor address, steps uint32, pre [32]byte, 
 			panic("effect " + strconv.FormatUint(orig.ID, 10) + " already has compensation " + strconv.FormatUint(c.ID, 10) + " running")
 		}
 	}
+	// Undoing an effect that may still land is a person's decision, never the clock's: it consumes the approver's
+	// recorded approval for this key with the original's pre-state as the postcondition.
+	approvalSeal := sdk.ZeroDigest()
+	if orig.Spec.Landable() && st != sdk.EffectCommitted {
+		if approvalID == 0 {
+			panic("effect " + strconv.FormatUint(orig.ID, 10) + " may still land: compensating it now needs ApproveEffect from the agent's approver")
+		}
+		approvalSeal = useApproval(approvalID, orig.Spec.AgentID, orig.Spec.EffectKey, orig.Spec.PreState, orig.Executor)
+	} else if approvalID != 0 {
+		panic("this compensation needs no approval; pass 0")
+	}
 	if orig.State == sdk.EffectStarted && st == sdk.EffectInDoubt {
 		seal(orig, sdk.EventInDoubt, sdk.EffectInDoubt, actor, 0, sdk.ZeroDigest(), 0, 0)
 	}
@@ -400,24 +465,33 @@ func startCompensation(orig *effect, actor address, steps uint32, pre [32]byte, 
 		AgentID: orig.Spec.AgentID, EffectKey: orig.Spec.EffectKey,
 		IdempotencyKey: "compensate-" + strconv.FormatUint(orig.ID, 10) + "-" + strconv.FormatUint(uint64(orig.Compensations), 10),
 		Attempt:        1, Steps: steps, Reversal: sdk.ReversalCompensable, Inverse: "re-apply effect " + strconv.FormatUint(orig.ID, 10),
-		ReadBack: orig.Spec.ReadBack, PreState: pre, Postcondition: orig.Spec.PreState, DeadlineBlocks: deadlineBlocks,
-		CleanupOwner: orig.Spec.CleanupOwner, Compensates: orig.ID,
+		ReadBack: orig.Spec.ReadBack, DownstreamHonoursLive: orig.Spec.DownstreamHonoursLive,
+		PreState: pre, Postcondition: orig.Spec.PreState, DeadlineBlocks: deadlineBlocks,
+		CleanupOwner: orig.Spec.CleanupOwner, ApprovalID: approvalID, Compensates: orig.ID,
 	}
 	comp := begin(spec, actor, keys, targets, prior)
 	orig.Compensation = comp
-	seal(orig, sdk.EventCompensate, orig.State, actor, 0, sdk.ZeroDigest(), 0, comp)
+	seal(orig, sdk.EventCompensate, orig.State, actor, 0, approvalSeal, 0, comp)
 	return comp
 }
 
 // AcceptEffect closes a PARTIAL or IN_DOUBT effect as ACCEPTED: the cleanup owner takes what landed as final.
-// reasonHex is the digest of the reason, kept off chain.
+// reasonHex is the digest of the reason, kept off chain. An IN_DOUBT effect is fenced first (FenceEffect), so nothing
+// more is accepted under it, and no effect is accepted while its compensation is running. An accepted effect whose
+// downstream does not honour EffectLive keeps holding its key.
 func AcceptEffect(cur realm, effectID uint64, reasonHex string) {
 	e := mustEffect(effectID)
 	actor := mustCleanupOwner(cur, e)
 	reason := mustDigest("reasonHex", reasonHex)
-	st := effectiveState(e, runtime.ChainHeight())
-	if st != sdk.EffectPartial && st != sdk.EffectInDoubt {
+	height := runtime.ChainHeight()
+	st := effectiveState(e, height)
+	switch {
+	case st != sdk.EffectPartial && st != sdk.EffectInDoubt:
 		panic("effect " + strconv.FormatUint(e.ID, 10) + " is " + string(st) + ": only a PARTIAL or IN_DOUBT effect is accepted")
+	case st == sdk.EffectInDoubt && !e.Fenced:
+		panic("effect " + strconv.FormatUint(e.ID, 10) + " is IN_DOUBT and not fenced: FenceEffect first")
+	case e.Compensation != 0 && !effectiveState(mustEffect(e.Compensation), height).Closed():
+		panic("effect " + strconv.FormatUint(e.ID, 10) + " has compensation " + strconv.FormatUint(e.Compensation, 10) + " running")
 	}
 	if e.State == sdk.EffectStarted && st == sdk.EffectInDoubt {
 		seal(e, sdk.EventInDoubt, sdk.EffectInDoubt, actor, 0, sdk.ZeroDigest(), 0, 0)
@@ -441,7 +515,7 @@ func seal(e *effect, kind sdk.EffectEventKind, state sdk.EffectState, actor addr
 	if state.Closed() {
 		active.Remove(key(e.ID))
 		kk := pair(e.Spec.AgentID, e.Spec.EffectKey)
-		if holderID, ok := holders.Get(kk).(uint64); ok && holderID == e.ID {
+		if holderID, ok := holders.Get(kk).(uint64); ok && holderID == e.ID && !holdsKey(e) {
 			holders.Remove(kk)
 		}
 	}
@@ -454,6 +528,12 @@ func seal(e *effect, kind sdk.EffectEventKind, state sdk.EffectState, actor addr
 		"leaf", sdk.Hex(leaf),
 		"height", strconv.FormatInt(ev.Height, 10),
 	)
+}
+
+// holdsKey reports whether a closed effect still holds its key: an ACCEPTED effect whose downstream does not honour
+// EffectLive, because a request sent under it may still land and a new effect on the key would then apply twice.
+func holdsKey(e *effect) bool {
+	return e.State == sdk.EffectAccepted && e.Spec.Landable()
 }
 
 func (e *effect) lastStepHeight() int64 {

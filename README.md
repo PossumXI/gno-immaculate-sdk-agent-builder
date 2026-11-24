@@ -168,7 +168,7 @@ STARTED -> step receipts -> CLOSE: COMMITTED | PARTIAL | IN_DOUBT | ABORTED
   - `MarkInDoubt` is open to anyone. It changes the state and nothing else.
   - A close is computed from a read-back, never asserted:
     - the declared postcondition is COMMITTED;
-    - the declared pre-state is ABORTED, but only once the effect has been fenced (by `FenceEffect`, or by its deadline passing) before the read-back. Until then "nothing seen" stays IN_DOUBT, because something already sent under it could still land;
+    - the declared pre-state is ABORTED, but only once the effect has been fenced (by `FenceEffect`, or by its deadline passing) before the read-back, and only if the start declared that its downstream honours `EffectLive`. Until then "nothing seen" stays IN_DOUBT, because something already sent under it could still land;
     - anything else is PARTIAL.
 - **Own.**
   - Every start names a cleanup owner. `OpenEffects` lists every IN_DOUBT and PARTIAL effect with its owner, its age and the receipts that landed.
@@ -176,14 +176,19 @@ STARTED -> step receipts -> CLOSE: COMMITTED | PARTIAL | IN_DOUBT | ABORTED
   - A retry carries the same idempotency key and the next attempt number. Every event names its attempt, and a call for another attempt is refused.
 - **Undo.**
   - Every start declares a reversal class: REVERSIBLE, COMPENSABLE or IRREVERSIBLE.
-  - An IRREVERSIBLE effect needs the agent owner's `ApproveEffect`, for that key and postcondition, before it starts. A refused start leaves no record.
+  - An IRREVERSIBLE effect needs an `ApproveEffect`, for that key and postcondition, before it starts. A refused start leaves no record.
+    - The approval comes from the agent's approver, the account its owner names with `SetApprover`. That account may not be the owner, so the key that runs an effect never approves it. Each approval is used once.
+    - The realm cannot tell whether the approver account is held by a person. A deployment that needs a particular person, or two of them, makes that account theirs, for example a multisig.
   - A compensation is an effect of its own, capped at three per effect. Its postcondition is the original's pre-state, and the original reads COMPENSATED only when the compensation's read-back shows that state.
+  - Undoing an effect that may still land, while it is IN_DOUBT or PARTIAL, also needs the approver's `ApproveEffect`. The approval is recorded on the event: the clock alone never starts such an undo.
+  - `AcceptEffect` lets the cleanup owner take what landed as final. An IN_DOUBT effect is fenced first, and nothing is accepted while its compensation is still open. An accepted effect that may still land keeps holding its key.
   - The owner's `PauseEffects` holds new starts, steps and compensations. Detection keeps working while effects are paused.
 
 **What the realm can and cannot see.**
 - A **demo** effect acts on a small state inside the realm. The realm reads the pre-state and every read-back itself, so its closes are computed from state the chain holds.
 - An **external** effect acts outside the chain. The agent reports digests and the height it observed them at, and the realm checks them against the digests the start declared, the attempt and the age of the read-back. It cannot see the downstream system itself.
-- A fence binds a downstream only if that downstream checks `EffectLive(id, attempt)` before it applies anything.
+- A fence binds a downstream only if that downstream checks `EffectLive(id, attempt)` in the same step that applies anything, or keeps its own record of the attempts it consumed. Otherwise a check-then-apply window remains. An external start declares whether its downstream does (`downstreamHonoursLive`).
+  - If it does not, nothing the realm records proves "no effect": the effect never reads ABORTED, and an accepted one keeps its key.
 
 **Checking a life offline.** `EffectJSON(id)` returns the spec and every event.
 `node verifier/verify-effect.mjs effect.json` recomputes the spec digest, every leaf, the hash chain and every

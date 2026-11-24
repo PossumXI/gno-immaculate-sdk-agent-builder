@@ -106,7 +106,12 @@ type EffectSpec struct {
 	Reversal       ReversalClass
 	Inverse        string   // REVERSIBLE: the inverse operation; COMPENSABLE: the compensating action
 	ReadBack       string   // ReadBackRealm or ReadBackAgent
-	PreState       [32]byte // the downstream state before the effect
+	// DownstreamHonoursLive declares that the downstream checks EffectLive(id, attempt) in the same step that applies
+	// anything, or keeps its own record of the attempts it consumed. Only then does a fence or a passed deadline
+	// prove that nothing sent under the effect can still land. A realm read-back is always true: the realm is the
+	// downstream, and it refuses every step after a fence or the deadline.
+	DownstreamHonoursLive bool
+	PreState              [32]byte // the downstream state before the effect
 	Postcondition  [32]byte // the read-back that closes the effect as COMMITTED
 	DeadlineBlocks int64    // the effect must close within this many blocks of its start
 	CleanupOwner   string   // who owns the cleanup when the effect is IN_DOUBT or PARTIAL
@@ -133,6 +138,8 @@ func (s EffectSpec) Validate() error {
 		return errors.New("effect: a cleanup owner is required")
 	case s.ReadBack != ReadBackRealm && s.ReadBack != ReadBackAgent:
 		return errors.New("effect: read-back must be REALM or AGENT")
+	case s.ReadBack == ReadBackRealm && !s.DownstreamHonoursLive:
+		return errors.New("effect: a realm read-back's downstream is the realm, which honours EffectLive")
 	case s.PreState == s.Postcondition:
 		return errors.New("effect: the postcondition equals the pre-state, so a run could not be told from a no-op")
 	case len(s.Inverse) > maxInverseLength:
@@ -143,8 +150,8 @@ func (s EffectSpec) Validate() error {
 		if s.Inverse == "" {
 			return errors.New("effect: a " + string(s.Reversal) + " effect names how it is undone")
 		}
-		if s.ApprovalID != 0 {
-			return errors.New("effect: only an IRREVERSIBLE effect consumes an approval")
+		if s.ApprovalID != 0 && s.Compensates == 0 {
+			return errors.New("effect: only an IRREVERSIBLE effect, or the compensation of an effect that may still land, consumes an approval")
 		}
 	case ReversalIrreversible:
 		if s.Inverse != "" {
@@ -175,6 +182,7 @@ func (s EffectSpec) Encode() []byte {
 	out = appendString(out, string(s.Reversal))
 	out = appendString(out, s.Inverse)
 	out = appendString(out, s.ReadBack)
+	out = append(out, boolByte(s.DownstreamHonoursLive))
 	out = append(out, s.PreState[:]...)
 	out = append(out, s.Postcondition[:]...)
 	out = binary.BigEndian.AppendUint64(out, uint64(s.DeadlineBlocks))
@@ -187,6 +195,14 @@ func (s EffectSpec) Encode() []byte {
 // Digest returns SHA-256(Encode()).
 func (s EffectSpec) Digest() [32]byte {
 	return sha256.Sum256(s.Encode())
+}
+
+// Landable reports whether something sent under this effect may still land after a fence or the deadline: its
+// downstream is outside the chain and does not honour EffectLive. For such an effect nothing the realm records proves
+// "no effect", so a pre-state read-back stays IN_DOUBT, ACCEPTED keeps the key held, and compensating it while it is
+// IN_DOUBT or PARTIAL consumes the owner's recorded approval.
+func (s EffectSpec) Landable() bool {
+	return s.ReadBack == ReadBackAgent && !s.DownstreamHonoursLive
 }
 
 // CloseOutcome computes how an effect closes from the read-back of its downstream state. fencedBeforeRead says
@@ -342,7 +358,8 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 				if ev.ObservedHeight < lastStepHeight || ev.ObservedHeight > ev.Height || ev.Height-ev.ObservedHeight > MaxReadBackAgeBlocks {
 					return "", errors.New(at + "the read-back is older than the last step, from the future, or too old")
 				}
-				fencedBefore = (fenced && ev.ObservedHeight > fenceHeight) || ev.ObservedHeight > deadline
+				// A fence or the clock proves nothing about a downstream that does not honour EffectLive.
+				fencedBefore = !spec.Landable() && ((fenced && ev.ObservedHeight > fenceHeight) || ev.ObservedHeight > deadline)
 			}
 			if ev.Digest == ZeroDigest() {
 				return "", errors.New(at + "a close needs a read-back digest")
@@ -362,6 +379,10 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 			if compensations > MaxCompensations {
 				return "", errors.New(at + "more compensations than MaxCompensations")
 			}
+			// Undoing an effect that may still land is the owner's decision: the event carries the approval it used.
+			if spec.Landable() && state != EffectCommitted && ev.Digest == ZeroDigest() {
+				return "", errors.New(at + "compensates an effect that may still land without the owner's recorded approval")
+			}
 			openLinks[ev.Link] = true
 		case EventCompensated:
 			if !openLinks[ev.Link] || ev.Digest != spec.PreState {
@@ -369,8 +390,10 @@ func VerifyEffectLife(effectID uint64, spec EffectSpec, events []EffectEvent) (E
 			}
 			next = EffectCompensated
 		case EventAccept:
-			if ev.Actor != spec.CleanupOwner || (state != EffectPartial && state != EffectInDoubt) {
-				return "", errors.New(at + "is not an acceptance the cleanup owner may make here")
+			// A person may take what landed as final, once nothing more can be sent under the effect: an IN_DOUBT
+			// effect is fenced first.
+			if ev.Actor != spec.CleanupOwner || (state != EffectPartial && state != EffectInDoubt) || (state == EffectInDoubt && !fenced) {
+				return "", errors.New(at + "is not an acceptance the cleanup owner may make here (an IN_DOUBT effect is fenced first)")
 			}
 			next = EffectAccepted
 		default:
@@ -389,7 +412,8 @@ type EffectBuilder struct {
 	spec EffectSpec
 }
 
-// NewEffect starts a spec for one effect of an agent on one key, read back by the agent.
+// NewEffect starts a spec for one effect of an agent on one key, read back by the agent. Its downstream is taken not
+// to honour EffectLive until DownstreamHonoursLive(true) says it does: the conservative default.
 func NewEffect(agentID, effectKey, idempotencyKey string) *EffectBuilder {
 	return &EffectBuilder{spec: EffectSpec{
 		AgentID: agentID, EffectKey: effectKey, IdempotencyKey: idempotencyKey, Attempt: 1, ReadBack: ReadBackAgent,
@@ -403,6 +427,10 @@ func (b *EffectBuilder) States(pre, post [32]byte) *EffectBuilder {
 	return b
 }
 func (b *EffectBuilder) ReadBy(who string) *EffectBuilder       { b.spec.ReadBack = who; return b }
+func (b *EffectBuilder) DownstreamHonoursLive(v bool) *EffectBuilder {
+	b.spec.DownstreamHonoursLive = v
+	return b
+}
 func (b *EffectBuilder) Deadline(blocks int64) *EffectBuilder  { b.spec.DeadlineBlocks = blocks; return b }
 func (b *EffectBuilder) CleanupOwner(who string) *EffectBuilder { b.spec.CleanupOwner = who; return b }
 func (b *EffectBuilder) Reversible(inverse string) *EffectBuilder {

@@ -10,10 +10,12 @@ const (
 	effOwner    = "g1cleanup"
 )
 
+// effSpec is an external effect whose downstream honours EffectLive, so a fence proves "no effect".
 func effSpec() EffectSpec {
 	s, err := NewEffect("worker-1", "ledger:alice", "pay-42").
 		Steps(3).
 		States(HashString("before"), HashString("after")).
+		DownstreamHonoursLive(true).
 		Deadline(10).
 		CleanupOwner(effOwner).
 		Compensable("refund").
@@ -22,6 +24,65 @@ func effSpec() EffectSpec {
 		panic(err.Error())
 	}
 	return s
+}
+
+// landableSpec is the same effect against a downstream that does not honour EffectLive.
+func landableSpec() EffectSpec {
+	s := effSpec()
+	s.DownstreamHonoursLive = false
+	return s
+}
+
+func TestALandableEffectNeverReadsAbortedAndNeedsApprovalToCompensate(t *testing.T) {
+	s := landableSpec()
+	if !s.Landable() || effSpec().Landable() {
+		t.Fatalf("Landable is the external read-back without EffectLive")
+	}
+	// A fence and a pre-state read-back after it: still IN_DOUBT, because a request sent before the fence may land.
+	closed := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventStep, State: EffectStarted, Actor: effExecutor, Height: 101, StepIndex: 1, Digest: HashString("r1")},
+		{Kind: EventFence, State: EffectStarted, Actor: effExecutor, Height: 102},
+		{Kind: EventClose, State: EffectInDoubt, Actor: effExecutor, Height: 104, Digest: s.PreState, ObservedHeight: 103},
+	})
+	if st, err := VerifyEffectLife(9, s, closed); err != nil || st != EffectInDoubt {
+		t.Fatalf("got %s, %v", st, err)
+	}
+	asserted := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventFence, State: EffectStarted, Actor: effExecutor, Height: 102},
+		{Kind: EventClose, State: EffectAborted, Actor: effExecutor, Height: 104, Digest: s.PreState, ObservedHeight: 103},
+	})
+	if _, err := VerifyEffectLife(9, s, asserted); err == nil {
+		t.Fatalf("ABORTED must not verify for an effect that may still land")
+	}
+	// The same after the deadline: the clock proves nothing either.
+	late := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+		{Kind: EventClose, State: EffectInDoubt, Actor: effOwner, Height: 120, Digest: s.PreState, ObservedHeight: 119},
+	})
+	if st, err := VerifyEffectLife(9, s, late); err != nil || st != EffectInDoubt {
+		t.Fatalf("got %s, %v", st, err)
+	}
+	// Compensating it while IN_DOUBT needs the owner's approval, carried on the COMPENSATE event.
+	unapproved := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+		{Kind: EventCompensate, State: EffectInDoubt, Actor: effOwner, Height: 112, Link: 10},
+	})
+	if _, err := VerifyEffectLife(9, s, unapproved); err == nil {
+		t.Fatalf("a compensation of an effect that may still land needs the recorded approval")
+	}
+	approved := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+		{Kind: EventCompensate, State: EffectInDoubt, Actor: effOwner, Height: 112, Digest: HashString("approval 3"), Link: 10},
+		{Kind: EventCompensated, State: EffectCompensated, Actor: effOwner, Height: 115, Digest: s.PreState, Link: 10},
+	})
+	if st, err := VerifyEffectLife(9, s, approved); err != nil || st != EffectCompensated {
+		t.Fatalf("got %s, %v", st, err)
+	}
 }
 
 // chainEvents numbers the events, links each to the one before and returns them.
@@ -121,6 +182,16 @@ func TestVerifyEffectLifeAcceptsACompensatedLife(t *testing.T) {
 	if st, err := VerifyEffectLife(9, s, evs2); err != nil || st != EffectAborted {
 		t.Fatalf("got %s, %v", st, err)
 	}
+	// A person accepts an IN_DOUBT effect once it is fenced.
+	evs3 := chainEvents(9, s, []EffectEvent{
+		startEvent(s, 100),
+		{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+		{Kind: EventFence, State: EffectInDoubt, Actor: effOwner, Height: 112},
+		{Kind: EventAccept, State: EffectAccepted, Actor: effOwner, Height: 113, Digest: HashString("ok")},
+	})
+	if st, err := VerifyEffectLife(9, s, evs3); err != nil || st != EffectAccepted {
+		t.Fatalf("got %s, %v", st, err)
+	}
 }
 
 func TestVerifyEffectLifeRefusesATamperedChain(t *testing.T) {
@@ -199,6 +270,11 @@ func TestVerifyEffectLifeRefusesWhatTheLifecycleForbids(t *testing.T) {
 			startEvent(s, 100),
 			{Kind: EventClose, State: EffectPartial, Actor: effExecutor, Height: 102, Digest: HashString("half"), ObservedHeight: 102},
 			{Kind: EventAccept, State: EffectAccepted, Actor: effExecutor, Height: 103, Digest: HashString("ok")},
+		},
+		"accepting an unfenced IN_DOUBT": {
+			startEvent(s, 100),
+			{Kind: EventInDoubt, State: EffectInDoubt, Actor: "g1anyone", Height: 111},
+			{Kind: EventAccept, State: EffectAccepted, Actor: effOwner, Height: 112, Digest: HashString("ok")},
 		},
 		"anything after ABORTED": {
 			startEvent(s, 100),

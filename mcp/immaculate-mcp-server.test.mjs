@@ -216,7 +216,7 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     const h = (s) => crypto.createHash('sha256').update(s).digest('hex');
     const spec = {
       agent_id: 'worker-1', effect_key: 'ledger:alice', idempotency_key: 'pay-1', attempt: 1, steps: 1,
-      reversal: 'COMPENSABLE', inverse: 'restore', read_back: 'REALM', pre_state: h('before'), postcondition: h('after'),
+      reversal: 'COMPENSABLE', inverse: 'restore', read_back: 'REALM', downstream_honours_live: true, pre_state: h('before'), postcondition: h('after'),
       deadline_blocks: 5, cleanup_owner: 'g1cleanup', approval_id: 0, compensates: 0,
     };
     const start = { attempt: 1, seq: 0, prev_hash: '0'.repeat(64), kind: 'START', state: 'STARTED', actor: 'g1exec', height: 7,

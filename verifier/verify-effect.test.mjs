@@ -11,7 +11,7 @@ const ZERO = '0'.repeat(64);
 function life() {
   const spec = {
     agent_id: 'worker-1', effect_key: 'ledger:alice', idempotency_key: 'pay-1', attempt: 1, steps: 3,
-    reversal: 'COMPENSABLE', inverse: 'restore', read_back: 'REALM', pre_state: h('before'), postcondition: h('after'),
+    reversal: 'COMPENSABLE', inverse: 'restore', read_back: 'REALM', downstream_honours_live: true, pre_state: h('before'), postcondition: h('after'),
     deadline_blocks: 3, cleanup_owner: 'g1cleanup', approval_id: 0, compensates: 0,
   };
   const raw = [
@@ -76,4 +76,28 @@ test('a step under another attempt, or after the deadline, does not verify', () 
   assert.throws(() => verifyEffect(seal(other)), /another attempt/);
   const late = life(); late.raw[1] = { ...late.raw[1], height: 14 };
   assert.throws(() => verifyEffect(seal(late)), /not a step/);
+});
+
+test('an external effect whose downstream does not honour EffectLive never reads ABORTED, and its undo needs the approval', () => {
+  const l = life();
+  l.spec = { ...l.spec, read_back: 'AGENT', downstream_honours_live: false };
+  const start = { ...l.raw[0], digest: crypto.createHash('sha256').update(encodeSpec(l.spec)).digest('hex') };
+  const fenceThenClose = (state) => [
+    start, l.raw[1],
+    { kind: 'FENCE', state: 'STARTED', actor: 'g1exec', height: 12 },
+    { kind: 'CLOSE', state, actor: 'g1exec', height: 13, digest: l.spec.pre_state, observed_height: 13 },
+  ];
+  assert.deepEqual(verifyEffect(seal({ ...l, raw: fenceThenClose('IN_DOUBT') })), { state: 'IN_DOUBT', events: 4 });
+  assert.throws(() => verifyEffect(seal({ ...l, raw: fenceThenClose('ABORTED') })), /lifecycle gives IN_DOUBT/);
+  const undo = (digest) => [start, l.raw[1], l.raw[2], { ...l.raw[3], ...(digest ? { digest } : {}) }];
+  assert.throws(() => verifyEffect(seal({ ...l, raw: undo(null) })), /recorded approval/);
+  assert.deepEqual(verifyEffect(seal({ ...l, raw: undo(h('approval 1')) })), { state: 'IN_DOUBT', events: 4 });
+});
+
+test('an IN_DOUBT effect is accepted only after a fence', () => {
+  const l = life();
+  const accept = { kind: 'ACCEPT', state: 'ACCEPTED', actor: 'g1cleanup', height: 16, digest: h('ok') };
+  assert.throws(() => verifyEffect(seal({ ...l, raw: [l.raw[0], l.raw[1], l.raw[2], accept] })), /fenced first/);
+  const fence = { kind: 'FENCE', state: 'IN_DOUBT', actor: 'g1cleanup', height: 15 };
+  assert.deepEqual(verifyEffect(seal({ ...l, raw: [l.raw[0], l.raw[1], l.raw[2], fence, accept] })), { state: 'ACCEPTED', events: 5 });
 });
