@@ -50,7 +50,7 @@
 
 ---
 
-## 2–3 Minute Demo Video Shot List (for `@canderson777`)
+## 2–3 Minute Demo Video Shot List
 1. **0:00–0:25 (Problem):** Why standard agents log mutable text and static spend caps miss stealth drift & sleeper memory poisoning.
 2. **0:25–1:00 (Real Gno v1.8.0 + E1–E5 Benchmarks):** Run `bash scripts/run-gno-tests.sh` and show `experiments/RESULTS.md` + `experiments/LIVE_BENCHMARKS.md` (100% Top-1 / 0% poison MemoryVault, 25× spike FPR drop, 0.9299 L1 Geometric Median, live sovereign local GPU inference).
 3. **1:00–1:45 (Interactive Browser Playground & MCP Server):** Open `web/index.html`, verify the Gno v1.8.0 Golden RFC 6962 proof, click **Tamper 1 Byte** to show instant forgery rejection, test Spherical Quarantine + Hybrid RRF recall, and run `node --test mcp/immaculate-mcp-server.test.mjs`.
