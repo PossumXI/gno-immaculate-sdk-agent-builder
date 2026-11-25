@@ -29,9 +29,6 @@ func Render(path string) string {
 	if clean == "benchmarks" {
 		return renderBenchmarks()
 	}
-	if clean == "obligations" {
-		return renderObligations()
-	}
 	if strings.HasPrefix(clean, "agent/") {
 		return renderAgent(strings.TrimPrefix(clean, "agent/"))
 	}
@@ -56,7 +53,6 @@ func renderHome() string {
 	b.WriteString("| Pro Agent Plan (30 days) | `" + strconv.FormatInt(agentPlanPriceUgnot, 10) + "ugnot` (1-block anchor cadence) |\n")
 	b.WriteString("| Built-In Demo Agent | [Inspect Live Demo Evidence](/r/arobi/assurance:demo) |\n")
 	b.WriteString("| Built-In Familiar & Governed Memory | [Inspect Familiar Vault & Capabilities](/r/arobi/assurance:familiar) |\n")
-	b.WriteString("| Open Effect Obligations | [Inspect IN_DOUBT / PARTIAL Obligations (" + strconv.Itoa(OpenObligationsCount()) + ")](/r/arobi/assurance:obligations) |\n")
 	b.WriteString("| Scientific Benchmarks | [Measured Evaluation (E1–E4)](/r/arobi/assurance:benchmarks) |\n\n")
 
 	b.WriteString("## Registered Agent Passports\n\n")

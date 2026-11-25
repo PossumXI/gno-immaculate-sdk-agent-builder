@@ -1,0 +1,96 @@
+# Acceptance 1: the executor stops between step 1 and step 2 of a three-step action. After the deadline the effect
+# reads IN_DOUBT with no call from the executor, and the open list shows it with its cleanup owner and one receipt.
+# Rule 5 too: the clock decides, so the old attempt can no longer record a step, and anyone may seal IN_DOUBT
+# without changing anything else.
+# scripts/run-effects-txtars.sh adds the loadpkg lines and the packages.
+
+adduser cleanup 100000000000ugnot
+adduser anyone 100000000000ugnot
+
+gnoland start
+
+gnokey maketx call -pkgpath gno.land/r/arobi/assurance -func RegisterAgent -args worker-1 -args 'Worker 1' -args 1111111111111111111111111111111111111111111111111111111111111111 -args '' -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout OK!
+
+# A three-step demo effect, a 10-block deadline, and another account as its cleanup owner.
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args ledger:alice -args pay-1 -args 1 -args COMPENSABLE -args 'restore the old values' -args a1,a2,a3 -args 10,20,30 -args 10 -args $cleanup_user_addr -args 0 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout '\(1 uint64\)'
+
+# Step 1 runs. Then the executor goes quiet: it makes no more calls in this script.
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 1 -args 1 -args 1 -args 10 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stdout OK!
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectState(1)'
+stdout '\("STARTED" string\)'
+
+# Blocks pass under other accounts' transactions: eleven, so the height is past the deadline.
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+gnokey maketx send -send 1ugnot -to $cleanup_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test anyone
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+gnokey maketx send -send 1ugnot -to $cleanup_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test anyone
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+gnokey maketx send -send 1ugnot -to $cleanup_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test anyone
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+gnokey maketx send -send 1ugnot -to $cleanup_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test anyone
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+gnokey maketx send -send 1ugnot -to $cleanup_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test anyone
+gnokey maketx send -send 1ugnot -to $anyone_user_addr -gas-fee 130001ugnot -gas-wanted 1300000 -chainid=tendermint_test cleanup
+
+# IN_DOUBT, with no call from the executor and before anyone sealed it.
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectState(1)'
+stdout '\("IN_DOUBT" string\)'
+
+# The open list names the effect, its cleanup owner and the one receipt that landed.
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.OpenEffects()'
+stdout 'id\\":1,'
+stdout 'IN_DOUBT'
+stdout $cleanup_user_addr
+stdout 'receipts\\":1,'
+
+# Under the old attempt the quiet executor can no longer record step 2.
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 1 -args 1 -args 2 -args 20 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stderr 'passed its deadline height'
+
+# Anyone may seal IN_DOUBT; it changes the state and nothing else.
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func MarkInDoubt -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test anyone
+stdout '\("IN_DOUBT" string\)'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a1\")"
+stdout '\("10" string\)'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a2\")"
+stdout '\("" string\)'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.VerifyEffect(1)'
+stdout '\("IN_DOUBT" string\)'
+
+# Acceptance 2: a new start on that effect key is refused, and the refusal names the open effect.
+! gnokey maketx call -pkgpath gno.land/r/arobi/effects -func BeginDemoEffect -args worker-1 -args ledger:alice -args pay-2 -args 1 -args COMPENSABLE -args 'restore the old values' -args a1 -args 99 -args 10 -args $cleanup_user_addr -args 0 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test test1
+stderr 'effect key ledger:alice has open effect 1 \(IN_DOUBT\)'
+
+# Acceptance 3: the cleanup owner runs the compensation, an effect of its own on the same key. Its read-back shows
+# the first state, the effect reads COMPENSATED, and its life verifies offline; a tampered copy does not.
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CompensateDemo -args 1 -args 10 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stdout '\(2 uint64\)'
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 2 -args 1 -args 1 -args '' -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stdout OK!
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 2 -args 1 -args 2 -args '' -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stdout OK!
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func DemoStep -args 2 -args 1 -args 3 -args '' -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stdout OK!
+gnokey maketx call -pkgpath gno.land/r/arobi/effects -func CloseDemoEffect -args 2 -args 1 -gas-fee 5000001ugnot -gas-wanted 50000000 -chainid=tendermint_test cleanup
+stdout '\("COMMITTED" string\)'
+gnokey query vm/qeval --data "gno.land/r/arobi/effects.DemoValue(\"a1\")"
+stdout '\("" string\)'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectState(1)'
+stdout '\("COMPENSATED" string\)'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.VerifyEffect(1)'
+stdout '\("COMPENSATED" string\)'
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.VerifyEffect(2)'
+stdout '\("COMMITTED" string\)'
+
+# The offline verifier recomputes the spec digest, every leaf, the hash chain and every transition from the realm's
+# own EffectJSON, and refuses the same life with one receipt changed.
+gnokey query vm/qeval --data 'gno.land/r/arobi/effects.EffectJSON(1)'
+cp stdout effect1.json
+[exec:node] exec node $WORK/verifier/verify-effect.mjs $WORK/effect1.json
+[exec:node] stdout 'VERIFIED effect life: 5 events, COMPENSATED'
+[exec:node] exec node $WORK/verifier/tamper-effect.mjs $WORK/effect1.json $WORK/effect1-tampered.json
+[exec:node] ! exec node $WORK/verifier/verify-effect.mjs $WORK/effect1-tampered.json
+[exec:node] stderr 'NOT VERIFIED'
