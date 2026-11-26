@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Immaculate SDK Agent Builder, built on Gno.land — interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, live Onyx-1 RPC explorer, and E1-E5 scientific benchmarks." />
+  <meta name="description" content="Immaculate SDK Agent Builder, built on Gno.land — interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, live Onyx-1 RPC explorer, E1-E14 scientific benchmarks, and DeFi drift &amp; opacity simulator." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2315151f'/%3E%3Crect x='6' y='22' width='5' height='3' fill='%23ff2d95'/%3E%3Crect x='11' y='22' width='5' height='3' fill='%23ffe34d'/%3E%3Crect x='16' y='22' width='5' height='3' fill='%232de2ff'/%3E%3Crect x='21' y='22' width='5' height='3' fill='%235cff7a'/%3E%3Ccircle cx='16' cy='13' r='5' fill='none' stroke='%23f4f4fb' stroke-width='2.4'/%3E%3C/svg%3E" />
   <title>Immaculate SDK Agent Builder — RFC 6962 Verifier &amp; Familiar Memory Playground</title>
   <style>
@@ -82,15 +82,34 @@
     button.secondary:hover { border-color:#46466a; }
     button.danger { background:transparent; color:var(--bad); border:1px solid var(--bad); }
     pre { background:#0b0b12; border:1px solid var(--line); border-radius:10px; padding:12px; overflow-x:auto; font:.78rem/1.5 var(--mono);
-      color:var(--hue-green); max-height:380px; }
+      color:var(--hue-green); max-height:380px; margin:0; }
+    .table-wrap { overflow-x:auto; }
     table { width:100%; border-collapse:collapse; font-size:.84rem; margin-top:8px; }
-    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
     th { color:var(--hue-yellow); font:600 11px/1.3 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
-    .pass { color:var(--hue-green); font-weight:700; }
-    .fail { color:var(--bad); font-weight:700; }
+    .pass { color:var(--hue-green); font-weight:700; white-space:nowrap; }
+    .fail { color:var(--bad); font-weight:700; white-space:nowrap; }
     .tier-box { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
     .tier { background:var(--ink-2); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:.82rem; }
     .tier strong { color:var(--hue-cyan); }
+    .result-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:4px 0 10px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font:700 11.5px/1.2 var(--mono);
+      letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--line); background:var(--ink-2); color:var(--text); }
+    .pill::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
+    .pill-pass { color:var(--hue-green); background:rgba(92,255,122,.14); border-color:rgba(92,255,122,.45); }
+    .pill-clamped { color:var(--hue-yellow); background:rgba(255,227,77,.14); border-color:rgba(255,227,77,.45); }
+    .pill-quarantined { color:var(--hue-orange); background:rgba(255,122,61,.14); border-color:rgba(255,122,61,.45); }
+    .pill-latched { color:var(--bad); background:rgba(255,45,149,.16); border-color:rgba(255,45,149,.55); }
+    .pill-tampered { color:var(--bad); background:rgba(255,107,129,.16); border-color:rgba(255,107,129,.55); }
+    .pill-info { color:var(--hue-cyan); background:rgba(45,226,255,.12); border-color:rgba(45,226,255,.4); }
+    .status-detail { font:600 12px/1.3 var(--mono); color:var(--muted); }
+    .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin:12px 0 4px; }
+    .metric { background:var(--ink-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+    .metric .k { display:block; font:600 10.5px/1.2 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+    .metric .v { font:700 .92rem/1.25 var(--mono); color:var(--hue-cyan); word-break:break-word; }
+    .metric .v.ok { color:var(--hue-green); }
+    .metric .v.warn { color:var(--hue-yellow); }
+    .metric .v.bad { color:var(--bad); }
     .foot { margin-top:34px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; font:600 11px/1.4 var(--mono);
       letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
     .foot .stripe { width:64px; height:4px; }
@@ -101,7 +120,7 @@
   <header class="vhs">
     <div class="osd" aria-hidden="true"><span class="play">&#9654; Play</span><span>CH 01 &middot; Gno.land onyx-1 &middot; Agent SDK</span><span class="rec">Rec</span></div>
     <h1><span class="spectrum">Immaculate</span> SDK Agent Builder</h1>
-    <p class="sub">Consensus-safe autonomous agent &amp; Familiar assurance SDK on Gno.land. Verify RFC 6962 proofs offline in your browser, test spherical memory poisoning quarantine, or inspect live Onyx-1 deployments.</p>
+    <p class="sub">Consensus-safe autonomous agent &amp; Familiar assurance SDK on Gno.land. Verify RFC 6962 proofs offline in your browser, test spherical memory poisoning quarantine, simulate DeFi drift &amp; opacity circuit breakers, or inspect live Onyx-1 deployments.</p>
     <div class="badges">
     <span class="badge">Pure Fixed-Point (Zero Floats)</span>
     <span class="badge">RFC 6962 / RFC 9162 Evidence</span>
@@ -116,7 +135,8 @@
     <button class="tab active" data-tab="verifier">1. Offline RFC 6962 Verifier</button>
     <button class="tab" data-tab="familiar">2. Familiar MemoryVault Simulator</button>
     <button class="tab" data-tab="onyx">3. Onyx-1 Anchor &amp; RPC Explorer</button>
-    <button class="tab" data-tab="benchmarks">4. Scientific Benchmarks (E1–E5)</button>
+    <button class="tab" data-tab="benchmarks">4. Scientific Benchmarks (E1–E14)</button>
+    <button class="tab" data-tab="drift">5. DeFi Drift &amp; Opacity Simulator</button>
   </div>
 
   <!-- TAB 1 -->
@@ -182,30 +202,102 @@
   <!-- TAB 4 -->
   <section id="tab-benchmarks" class="panel">
     <div class="card">
-      <h2>Pre-Registered Scientific Evaluation (Experiments E1–E5, Seed 20261123)</h2>
-      <table>
-        <thead><tr><th>Experiment</th><th>Headline Measurement</th><th>Verdict</th></tr></thead>
-        <tbody>
-          <tr><td><strong>E1 Fixed-Point Fidelity</strong></td><td>MAE <code>1.9e-6 .. 7.2e-6</code> vs float64; <code>0</code> permutation diffs; <code>5/5</code> Gno v1.8.0 ↔ JS parity</td><td class="pass">PASS</td></tr>
-          <tr><td><strong>E2 Adversarial Agent (500 ep)</strong></td><td><code>ImmaculateFull</code> cuts +10σ spike FPR <code>100% → 4%</code> (25×); <code>100%</code> stealth +2σ drift TPR (3-step median); <code>100%</code> memory poison block</td><td class="pass">PASS</td></tr>
-          <tr><td><strong>E3 Real Gno v1.8.0 Gas</strong></td><td><code>2.66M</code> gas governed action; <code>4.97M</code> adaptive; <code>14.42M</code> Familiar + 8-record MemoryVault; <code>&le; 8</code> proof hashes @ 250 leaves</td><td class="pass">PASS</td></tr>
-          <tr><td><strong>E4 Governed MemoryVault (500 ep)</strong></td><td>Overlap-Weighted Hybrid RRF (<code>k=60</code>) + Quarantine: <strong>100% Top-1 recall</strong>, <strong>0% poison</strong> (vs <code>7.6%</code> dense-only, <code>100%</code> lexical poison)</td><td class="pass">PASS</td></tr>
-          <tr><td><strong>E5 Cross-Ref Dynamics</strong></td><td>3rd-order jerk (<code>n=3</code>) rejected (<code>2.5%</code> runaway TPR vs <code>99%</code> HampelCusum); Fixed-Point L1 <code>GeometricMedianFixed</code> hits <strong>0.9299 ROC-AUC</strong> (+6.6 pts)</td><td class="pass">ADOPTED L1 GM</td></tr>
-        </tbody>
-      </table>
+      <h2>Pre-Registered Scientific Evaluation (Experiments E1–E14, Seed 20261123)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Experiment</th><th>Headline Measurement</th><th>Verdict</th></tr></thead>
+          <tbody>
+            <tr><td><strong>E1 Fixed-Point Fidelity</strong></td><td>MAE <code>1.9e-6 .. 7.2e-6</code> vs IEEE-754 float64 across 500 streams/batches; <code>0</code> vector-permutation mismatches; <code>5/5</code> bit-exact Gno v1.8.0 ↔ Node.js RFC 6962 parity</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E2 Adversarial Agent (500 ep)</strong></td><td><code>ImmaculateFull</code> cuts +10σ spike FPR <code>100% → 4%</code> (25×); <code>100%</code> stealth +2σ drift TPR (<code>3</code>-step median); <code>100%</code> memory poison block (<code>0%</code> clean FPR), <code>100%</code> escalation block &amp; RFC 6962 proof</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E3 Real Gno v1.8.0 Gas</strong></td><td><code>2,659,102</code> gas governed action; <code>4,971,378</code> adaptive; <code>14,418,924</code> Familiar + 8-record <code>MemoryVault</code> ingest + Hybrid RRF Top-3 recall; <code>&le; 8</code> proof hashes @ 250 leaves</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E4 Governed MemoryVault (500 ep)</strong></td><td>Overlap-Weighted Hybrid RRF (<code>k=60</code>) + Spherical Quarantine: <strong>100% Top-1 recall</strong>, <strong>0% Top-3 poison</strong>, <strong>100% quarantine</strong> (vs <code>7.6%</code> dense-only, <code>100%</code> lexical poison)</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E5 Cross-Ref Dynamics</strong></td><td>3rd-order jerk (<code>n=3</code>) killed (<code>20×</code> noise, <code>100%</code> spike FPR, <code>2.5%</code> runaway TPR vs <code>99%</code> TPR / <code>5%</code> spike FPR <code>HampelCusum</code>); L1 <code>GeometricMedianFixed</code> hits <strong>0.9299 ROC-AUC</strong> vs <code>0.8640</code> centroid (<code>+6.59</code> pts @ 35% poison)</td><td class="pass">ADOPTED L1 GM</td></tr>
+            <tr><td><strong>E6 Cold-Start Gap (k=1 → k=2)</strong></td><td><code>MinTrustedAnchors = 2</code> let step-2 poison cause <code>36.03%</code> downstream clean rejects; calibrated <code>τ² = 0.3025</code> cuts rejects <code>30×</code> (<code>97%</code> block, <code>0.33%</code> clean FPR); owner-pinned <code>GenesisAnchor</code> hits <strong>100% block / 0% clean FPR</strong></td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E7 180° Symmetry &amp; Antipodal Split</strong></td><td>Discrete L1 Medoid init (SHA-256 tie-break) cuts 180° cancellation permutation divergences <code>50/100 → 0/100</code>; <code>AntipodalSplitGate</code> detects <strong>100% of balanced 180° split-brain batches</strong> at <strong>0% clean FPR</strong></td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E8 Filter Opacity (Period-6 Attacks)</strong></td><td>Raw <code>Δ²/Δ³</code> fail (<code>100%</code> spike FPR, <code>3.7–5%</code> drift TPR); <code>OpacityAwareHampelCusumDetector</code> jumps period <code>P=6 &gt; w=5</code> TPR <strong>72.3% → 100%</strong> with <strong>+0.0%</strong> clean or single-spike FPR regression</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E9 Anisotropy CAR &amp; Dispersion RRF</strong></td><td>Under anisotropic cone collapse (<code>w = 0.78</code>), <code>CommonAverageReferenceDebiasFixed</code> + Dispersion-Gated RRF lifts quarantine <strong>23.5% → 100.0%</strong>, drops Top-3 contamination <strong>87.7% → 0.0%</strong>, and hits <strong>99.7%</strong> Top-1 recall</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E10 Rational Quadrance (Zero <code>ISqrt64</code>)</strong></td><td>Wildberger <code>RationalCosGateFixed</code>: <strong>100%</strong> float64 threshold equivalence across <code>4,000</code> checks (<code>maxSpreadAbsError = 2.38e-6</code>), <code>0</code> <code>ISqrt64</code> calls, <strong>48.72%</strong> GnoVM gas reduction (<code>41,781,999 → 21,425,899</code> gas / 100 pairs)</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E11 AR(1) Prewhitening &amp; Youden-J</strong></td><td>Under AR(1) (<code>ρ = 0.70</code>), <code>AR1PrewhitenedHampelCusumDetector</code> cuts clean FPR <strong>7.4×</strong> (<code>42.0% → 5.7%</code>; spike <code>42.3% → 5.3%</code>) at <strong>98.3%</strong> <code>+2.5σ</code> drift TPR; <code>CalibrateThresholdYoudenFixed</code> max error <code>1.11e-16</code> (<code>0</code> AUC error)</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E12 Merkle Consistency (<code>SUBPROOF</code>)</strong></td><td>RFC 6962 / RFC 9162 §2.1.4.2: <strong>2,080/2,080 (100%)</strong> prefix pairs (<code>1 &le; N1 &le; N2 &le; 64</code>) verified; <code>N1=103 → N2=250</code> in <code>9</code> hashes with <strong>100%</strong> tamper rejection</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E13 Hubness Z-Score &amp; Kalman RW</strong></td><td><strong>E13a:</strong> <code>SetHubnessCalibration</code> (300 ep, <code>R¹⁶</code>) rescues Top-1 recall <strong>0% → 100%</strong> (<code>100% → 0%</code> hub hijack; <code>100%</code> clean recall).<br><strong>E13b:</strong> <code>KalmanRWTracker</code> (48,000 updates, <code>q/r ∈ {0.01, 0.10, 1.00}</code>) cuts multi-regime RMSE <strong>-42.4%</strong> (<code>0.9965 → 0.5741</code> vs EWMAs <code>1.4526</code> / <code>0.6699</code>; gain err <code>1.77e-6</code>, state err <code>1.67e-5</code>)</td><td class="pass">PASS</td></tr>
+            <tr><td><strong>E14 Cross-Chain Checkpoint &amp; Receipts</strong></td><td><code>CanonicalCheckpoint</code> + <code>BuildOrderedReceiptTree</code>: <strong>3/3</strong> bit-exact Gno v1.8.0 ↔ Node.js golden parity; <strong>100/100</strong> ordered batches verified; <strong>500/500 (100%)</strong> adversarial reorder/duplicate/mixed-chain/tamper mutations rejected</td><td class="pass">PASS</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Live Public System Benchmarks</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Live System / Subsystem</th><th>Real Measurement</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Gno.land Onyx Testnet (<code>onyx-1</code>) RPC</strong></td><td><code>/status</code> p50 <code>54.6 ms</code> (<code>abci_query</code> <code>43.6 ms</code>) at block <code>1344098</code>; <code>3</code> pkgs + <code>2</code> realms verified on-chain</td></tr>
+            <tr><td><strong>Stdio MCP Server (<code>immaculate-mcp-server.mjs</code>)</strong></td><td><code>governed_execute</code> p50 <code>1.284 ms</code>, <code>familiar_quarantine</code> <code>0.220 ms</code>, <code>familiar_recall</code> <code>0.232 ms</code>, <code>verify_evidence</code> <code>0.357 ms</code></td></tr>
+            <tr><td><strong>Whisper Agent Bus Crypto (X25519 + ChaCha20-Poly1305)</strong></td><td><strong>1,209 ops/s</strong> (256 B), <strong>1,221 ops/s</strong> (4 KiB), <strong>1,104 ops/s</strong> (16 KiB) — <code>100%</code> verified</td></tr>
+            <tr><td><strong>Sovereign Local GPU (<code>Inkling-2-Mini-Uncensored</code>)</strong></td><td>Allowed turns <code>5.22–5.63</code> prompt / <code>2.14–2.18</code> gen tok/s; fail-closed budget &amp; action refusals in <code>0.76–2.28 ms</code> (<code>0.97 ms</code> median across <code>5/5</code> probes, <code>100%</code> GPU saved); <code>100%</code> RFC 6962 proofs PASS</td></tr>
+            <tr><td><strong>Public Third-Party Platforms</strong></td><td>Google PageSpeed Insights: <strong>100 Perf / 100 BP / 100 SEO</strong> (LCP <code>0.2s</code>, TBT <code>0ms</code>, CLS <code>0</code>) · Hugging Face Hub dataset &amp; interactive Space</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 5 -->
+  <section id="tab-drift" class="panel">
+    <div class="card">
+      <h2>DeFi Behavioral Drift &amp; Filter-Opacity Simulator (Pure Fixed-Point <code>Scale = 1,000,000</code>)</h2>
+      <p class="sub" style="margin-bottom:8px">Deterministic <code>BigInt</code> port of <code>OpacityAwareHampelCusumDetector</code> in <code>gno.land/p/arobi/signals/drift.gno</code> (<code>Mean=100</code>, <code>SD=15</code>, <code>H=5</code>, <code>K=1</code>, <code>HampelWindow=5</code>, <code>ClipSigma=4</code>, <code>ClipWindow=24</code>, <code>MinClips=3</code>). Channel A detects sustained drift; Channel B latches on periodic filter-evading bursts (&ge; 3 clips &gt; 4&sigma; in 24 ticks).</p>
+      <div class="metrics">
+        <div class="metric"><span class="k">Tick / Breaker State</span><span id="mDriftState" class="v ok">0 &middot; ARMED</span></div>
+        <div class="metric"><span class="k">CUSUM Stat (S / H)</span><span id="mDriftStat" class="v">0.000000 / 5.000000</span></div>
+        <div class="metric"><span class="k">Opacity Clips (24t)</span><span id="mDriftClips" class="v">0 / 3</span></div>
+        <div class="metric"><span class="k">Last Channel</span><span id="mDriftChannel" class="v">none</span></div>
+        <div class="metric"><span class="k">Hampel Window (w=5)</span><span id="mDriftWindow" class="v">[91, 108, 95, 112, 100]</span></div>
+      </div>
+      <div>
+        <button id="btnDriftNormal" class="secondary">Normal Volatile Tick (90–115 ugnot)</button>
+        <button id="btnDriftSpike" class="action">Isolated Flash-Spike (450 ugnot / +23.3σ)</button>
+        <button id="btnDriftBurst" class="secondary">Periodic MEV Burst (250 ugnot)</button>
+        <button id="btnDriftBurstCycle" class="action">Step 5 Normal + 250 Burst (Trigger Opacity)</button>
+        <button id="btnDriftReset" class="danger">Principal Reset()</button>
+        <button id="btnDriftFullReset" class="secondary">Reset Episode</button>
+      </div>
     </div>
   </section>
 
   <section class="card" style="margin-top:16px">
     <h2>Live Result</h2>
-    <pre id="output">Click "Verify RFC 6962 Proof" or switch tabs to explore live cryptographic proofs, Familiar MemoryVault quarantine, and Onyx-1 on-chain state.</pre>
+    <div class="result-bar" aria-live="polite">
+      <span id="statusPill" class="pill pill-info">INFO</span>
+      <span id="statusDetail" class="status-detail">Ready — verify RFC 6962 proofs, MemoryVault quarantine, Onyx-1 RPC, or DeFi drift &amp; opacity.</span>
+    </div>
+    <pre id="output">Click "Verify RFC 6962 Proof" or switch tabs to explore live cryptographic proofs, Familiar MemoryVault quarantine, Onyx-1 on-chain state, and DeFi drift &amp; opacity simulation.</pre>
   </section>
   <footer class="foot"><span class="stripe" aria-hidden="true"></span><span>Arobi Technology Alliance, Inc.</span><a href="https://aura-genesis.org">aura-genesis.org</a></footer>
 </main>
 
 <script type="module">
   const $ = (id) => document.getElementById(id);
-  const show = (obj) => { $('output').textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2); };
+  const PILL_CLASS = {
+    PASS: 'pill-pass',
+    CLAMPED: 'pill-clamped',
+    QUARANTINED: 'pill-quarantined',
+    LATCHED: 'pill-latched',
+    TAMPERED: 'pill-tampered',
+    INFO: 'pill-info',
+    ERROR: 'pill-tampered',
+  };
+  const setPill = (status = 'INFO', detail = '') => {
+    const key = PILL_CLASS[status] ? status : 'INFO';
+    const pill = $('statusPill');
+    pill.className = `pill ${PILL_CLASS[key]}`;
+    pill.textContent = key;
+    $('statusDetail').textContent = detail;
+  };
+  const show = (obj, status = 'INFO', detail = '') => {
+    setPill(status, detail);
+    $('output').textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+  };
   const hexToBytes = (h) => new Uint8Array(h.match(/.{1,2}/g).map((b) => parseInt(b, 16)));
   const bytesToHex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join('');
 
@@ -251,16 +343,29 @@
     };
   });
 
-  $('btnLoadGolden').onclick = () => { $('proofJson').value = JSON.stringify(GOLDEN, null, 2); show('Loaded Gno v1.8.0 Golden RFC 6962 vector.'); };
+  $('btnLoadGolden').onclick = () => {
+    $('proofJson').value = JSON.stringify(GOLDEN, null, 2);
+    show('Loaded Gno v1.8.0 Golden RFC 6962 vector.', 'INFO', 'Golden RFC 6962 vector loaded');
+  };
   $('btnVerifyProof').onclick = async () => {
-    const v = JSON.parse($('proofJson').value);
-    show(await verifyRfc6962(v.leafIndex, v.treeSize, v.leafHash, v.proof, v.expectedRoot));
+    try {
+      const v = JSON.parse($('proofJson').value);
+      const res = await verifyRfc6962(v.leafIndex, v.treeSize, v.leafHash, v.proof, v.expectedRoot);
+      show(res, res.verified ? 'PASS' : 'TAMPERED', res.verified ? 'RFC 6962 inclusion proof verified' : 'Merkle root verification failed');
+    } catch (e) {
+      show({ verifyError: String(e.message || e) }, 'ERROR', 'Invalid proof JSON or hex input');
+    }
   };
   $('btnTamper').onclick = async () => {
-    const v = JSON.parse($('proofJson').value);
-    v.leafHash = (v.leafHash[0] === '0' ? 'f' : '0') + v.leafHash.slice(1);
-    $('proofJson').value = JSON.stringify(v, null, 2);
-    show({ tampered: true, ...(await verifyRfc6962(v.leafIndex, v.treeSize, v.leafHash, v.proof, v.expectedRoot)) });
+    try {
+      const v = JSON.parse($('proofJson').value);
+      v.leafHash = (v.leafHash[0] === '0' ? 'f' : '0') + v.leafHash.slice(1);
+      $('proofJson').value = JSON.stringify(v, null, 2);
+      const res = { tampered: true, ...(await verifyRfc6962(v.leafIndex, v.treeSize, v.leafHash, v.proof, v.expectedRoot)) };
+      show(res, res.verified ? 'PASS' : 'TAMPERED', res.verified ? 'Verified' : '1-byte leaf tamper detected — proof rejected');
+    } catch (e) {
+      show({ tamperError: String(e.message || e) }, 'ERROR', 'Invalid proof JSON or hex input');
+    }
   };
 
   // Interactive Familiar MemoryVault demo
@@ -278,7 +383,10 @@
   }
   resetVault();
 
-  $('btnResetVault').onclick = () => { resetVault(); show({ reset: true, activeCount: vault.length, quarantinedCount: 0 }); };
+  $('btnResetVault').onclick = () => {
+    resetVault();
+    show({ reset: true, activeCount: vault.length, quarantinedCount: 0 }, 'INFO', 'Seeded vault reset (3 clean records)');
+  };
   $('btnIngest').onclick = () => {
     const vec = $('memPreset').value === 'poison' ? norm([-0.95, 0.30, 0.05, 0]) : norm([0.98, 0.19, 0.01, 0]);
     const centroid = norm([0, 1, 2, 3].map((d) => vault.reduce((s, m) => s + m.vec[d], 0)));
@@ -286,10 +394,18 @@
     const rec = { id: vault.length + quarantined.length + 1, text: $('memText').value, vec, cosToCentroid: Number(cos.toFixed(4)) };
     if (cos < 0.55) {
       quarantined.push(rec);
-      show({ admitted: false, quarantined: true, reasonCode: 'MEMORY_SPHERICAL_QUARANTINE', cosToCentroid: rec.cosToCentroid, activeCount: vault.length, quarantinedCount: quarantined.length });
+      show(
+        { admitted: false, quarantined: true, reasonCode: 'MEMORY_SPHERICAL_QUARANTINE', cosToCentroid: rec.cosToCentroid, activeCount: vault.length, quarantinedCount: quarantined.length },
+        'QUARANTINED',
+        `MEMORY_SPHERICAL_QUARANTINE (cos=${rec.cosToCentroid} < 0.55)`,
+      );
     } else {
       vault.push(rec);
-      show({ admitted: true, quarantined: false, reasonCode: 'MEMORY_ADMITTED', cosToCentroid: rec.cosToCentroid, activeCount: vault.length, quarantinedCount: quarantined.length });
+      show(
+        { admitted: true, quarantined: false, reasonCode: 'MEMORY_ADMITTED', cosToCentroid: rec.cosToCentroid, activeCount: vault.length, quarantinedCount: quarantined.length },
+        'PASS',
+        `MEMORY_ADMITTED (cos=${rec.cosToCentroid} >= 0.55)`,
+      );
     }
   };
   $('btnRecall').onclick = () => {
@@ -308,7 +424,7 @@
       const rrf = Math.trunc(1000000 / (60 + rD)) + (m.cov > 0 ? Math.trunc((1000000 / (60 + rL)) * m.cov) : 0);
       return { id: m.id, text: m.text, rrfScore: rrf, lexCoverage: Number(m.cov.toFixed(2)) };
     }).sort((a, b) => b.rrfScore - a.rrfScore).slice(0, 2);
-    show({ top2HybridRRF: out, quarantinedBlocked: quarantined.length });
+    show({ top2HybridRRF: out, quarantinedBlocked: quarantined.length }, 'PASS', `Top-2 Hybrid RRF recall (${quarantined.length} quarantined blocked)`);
   };
 
   $('btnAnchorTx').onclick = () => {
@@ -324,7 +440,7 @@
         },
       }],
       gasFee: 1000000, gasWanted: 5000000,
-    });
+    }, 'INFO', 'Built AnchorCheckpoint /vm.m_call payload (0.001 GNOT)');
   };
   $('btnProTx').onclick = () => {
     show({
@@ -339,7 +455,7 @@
         },
       }],
       plan: 'Pro Agent Plan (10 GNOT / 30 days — 1-block high-frequency anchoring)',
-    });
+    }, 'INFO', 'Built SubscribeAgent Pro payload (10 GNOT / 30d)');
   };
   $('btnOnyx').onclick = async () => {
     const rpc = $('rpcUrl').value.trim().replace(/\/$/, '');
@@ -352,13 +468,338 @@
         const d = j?.result?.response?.ResponseBase?.Data;
         return d ? atob(d).trim().split('\n') : [];
       };
+      const height = st?.result?.sync_info?.latest_block_height;
       show({
         network: st?.result?.node_info?.network,
-        latestBlockHeight: st?.result?.sync_info?.latest_block_height,
+        latestBlockHeight: height,
         onChainPackages: await qInert('p'),
         onChainRealms: await qInert('r'),
-      });
-    } catch (e) { show({ rpcError: String(e.message || e) }); }
+      }, 'PASS', `Onyx-1 RPC live (block ${height ?? 'unknown'})`);
+    } catch (e) {
+      show({ rpcError: String(e.message || e) }, 'ERROR', 'Onyx-1 RPC query failed');
+    }
+  };
+
+  // Interactive DeFi Drift & Opacity Simulator (pure BigInt fixed-point matching signals/drift.gno)
+  const SCALE = 1000000n;
+  const MAD_SCALE = 1482600n;
+  const MIN_SD_FIXED = 1n;
+  const BASELINE_PRIMING = [91n, 108n, 95n, 112n, 100n];
+  const NORMAL_TICKS = [94, 111, 91, 108, 96, 114, 92, 105, 99, 113, 90, 107];
+
+  const abs64 = (x) => (x < 0n ? -x : x);
+  const mulFixed = (a, b) => (a * b) / SCALE;
+  const divFixed = (a, b) => {
+    if (b === 0n) throw new Error('signals: division by zero');
+    return (a * SCALE) / b;
+  };
+  const medianFixed = (vals) => {
+    const cp = [...vals].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const n = cp.length;
+    const mid = n >> 1;
+    if (n % 2 === 1) return cp[mid];
+    const a = cp[mid - 1], b = cp[mid];
+    return a + (b - a) / 2n;
+  };
+  const fmtFixed = (v) => {
+    const neg = v < 0n;
+    const u = neg ? -v : v;
+    const whole = u / SCALE;
+    const frac = (u % SCALE).toString().padStart(6, '0');
+    return `${neg ? '-' : ''}${whole}.${frac}`;
+  };
+
+  class RobustSmoother {
+    constructor(window = 5, kFixed = 3n * SCALE) {
+      this.window = window;
+      this.kFixed = kFixed;
+      this.buf = [];
+      this.replaced = 0;
+      this.count = 0;
+    }
+    hampelOnly(x) {
+      if (this.buf.length === 0) {
+        this.buf = Array(this.window).fill(x);
+      } else {
+        this.buf = [...this.buf.slice(1), x];
+      }
+      this.count++;
+      const med = medianFixed(this.buf);
+      const absDevs = this.buf.map((v) => abs64(v - med));
+      let mad = mulFixed(MAD_SCALE, medianFixed(absDevs));
+      if (mad < MIN_SD_FIXED) mad = MIN_SD_FIXED;
+      const thresh = mulFixed(this.kFixed, mad);
+      if (abs64(x - med) > thresh) {
+        this.replaced++;
+        return { cleaned: med, replaced: true, med, mad, thresh };
+      }
+      return { cleaned: x, replaced: false, med, mad, thresh };
+    }
+  }
+
+  class CusumDetector {
+    constructor(meanFixed, sdFixed, hFixed, kFixed) {
+      this.meanFixed = meanFixed;
+      this.sdFixed = sdFixed;
+      this.hFixed = hFixed;
+      this.kFixed = kFixed;
+      this.stat = 0n;
+      this.alarms = 0;
+      this.steps = 0;
+    }
+    update(xFixed) {
+      this.steps++;
+      const z = divFixed(xFixed - this.meanFixed, this.sdFixed);
+      let next = this.stat + z - this.kFixed;
+      if (next < 0n) next = 0n;
+      this.stat = next;
+      const alarm = this.stat > this.hFixed;
+      if (alarm) this.alarms++;
+      return { alarm, stat: this.stat, detail: alarm ? 'cusum_drift_alarm' : 'within_bound' };
+    }
+    reset() { this.stat = 0n; }
+  }
+
+  class OpacityAwareHampelCusum {
+    constructor({ mean = 100n * SCALE, sd = 15n * SCALE, h = 5n * SCALE, k = 1n * SCALE, hampelWindow = 5, hampelK = 3n * SCALE, clipSigma = 4n * SCALE, clipWindow = 24, minClips = 3 } = {}) {
+      this.mean = mean;
+      this.sd = sd;
+      this.h = h;
+      this.k = k;
+      this.hampelWindow = hampelWindow;
+      this.hampelK = hampelK;
+      this.clipSigma = clipSigma;
+      this.clipWindow = clipWindow;
+      this.minClips = minClips;
+      this.initDetector();
+    }
+    initDetector() {
+      this.smoother = new RobustSmoother(this.hampelWindow, this.hampelK);
+      this.cusum = new CusumDetector(this.mean, this.sd, this.h, this.k);
+      this.clipRing = Array(this.clipWindow).fill(false);
+      this.ringPos = 0;
+      this.ringCount = 0;
+      this.ringFilled = 0;
+      this.latched = false;
+      this.step = 0;
+      this.lastChannel = 'none';
+      this.lastReasonCode = 'DRIFT_WITHIN_BOUNDS';
+      for (const q of BASELINE_PRIMING) {
+        this.smoother.hampelOnly(q * SCALE);
+      }
+      this.smoother.replaced = 0;
+      this.smoother.count = 0;
+    }
+    evaluate(ugnot) {
+      if (this.latched) {
+        return {
+          verdict: 'VerdictEscalate',
+          reasonCode: 'DRIFT_CIRCUIT_BREAKER_LATCHED',
+          reason: 'agent halted by latched behavioral drift circuit breaker; principal reset required',
+          tick: this.step,
+          inputUgnot: ugnot,
+          latched: true,
+          channel: this.lastChannel,
+          cusumStat: fmtFixed(this.cusum.stat),
+          hThreshold: fmtFixed(this.h),
+          opacityClips: this.ringCount,
+          clipWindow: this.clipWindow,
+          minClips: this.minClips,
+          windowUgnot: this.smoother.buf.map((v) => Number(v / SCALE)),
+        };
+      }
+      this.step++;
+      const xFixed = BigInt(ugnot) * SCALE;
+      const hRes = this.smoother.hampelOnly(xFixed);
+      const cuRes = this.cusum.update(hRes.cleaned);
+      const zRaw = divFixed(xFixed - this.mean, this.sd);
+      const posClip = hRes.replaced && zRaw > this.clipSigma;
+
+      if (this.ringFilled < this.clipWindow) {
+        this.clipRing[this.ringPos] = posClip;
+        if (posClip) this.ringCount++;
+        this.ringPos = (this.ringPos + 1) % this.clipWindow;
+        this.ringFilled++;
+      } else {
+        if (this.clipRing[this.ringPos]) this.ringCount--;
+        this.clipRing[this.ringPos] = posClip;
+        if (posClip) this.ringCount++;
+        this.ringPos = (this.ringPos + 1) % this.clipWindow;
+      }
+
+      const opacityAlarm = this.ringCount >= this.minClips;
+      const alarm = cuRes.alarm || opacityAlarm;
+      let channel = 'none';
+      let detail = hRes.replaced ? 'spike_clamped_no_drift' : 'within_bound';
+      if (cuRes.alarm && opacityAlarm) {
+        channel = 'dual_cusum_and_opacity';
+        detail = 'dual_drift_and_pulsed_opacity_alarm';
+      } else if (opacityAlarm) {
+        channel = 'opacity_innovation_channel';
+        detail = 'pulsed_filter_opacity_alarm';
+      } else if (cuRes.alarm) {
+        channel = 'hampel_cusum_channel';
+        detail = 'cusum_drift_alarm';
+      }
+      if (alarm) this.latched = true;
+      this.lastChannel = channel;
+      this.lastReasonCode = alarm ? 'BEHAVIORAL_DRIFT_ALARM' : 'DRIFT_WITHIN_BOUNDS';
+
+      return {
+        verdict: alarm ? 'VerdictEscalate' : 'VerdictAllow',
+        reasonCode: this.lastReasonCode,
+        primitive: 'signals.opacity_aware_hampel_cusum',
+        detail,
+        channel,
+        tick: this.step,
+        inputUgnot: ugnot,
+        hampelCleanedUgnot: Number(hRes.cleaned / SCALE),
+        hampelMedianUgnot: Number(hRes.med / SCALE),
+        spikeClamped: hRes.replaced,
+        positiveClipCounted: posClip,
+        zSigma: fmtFixed(zRaw),
+        cusumStat: fmtFixed(cuRes.stat),
+        hThreshold: fmtFixed(this.h),
+        opacityClips: this.ringCount,
+        clipWindow: this.clipWindow,
+        minClips: this.minClips,
+        latched: this.latched,
+        windowUgnot: this.smoother.buf.map((v) => Number(v / SCALE)),
+      };
+    }
+    principalReset() {
+      this.latched = false;
+      this.cusum.reset();
+      this.clipRing.fill(false);
+      this.ringPos = 0;
+      this.ringCount = 0;
+      this.ringFilled = 0;
+      this.lastChannel = 'none';
+      this.lastReasonCode = 'DRIFT_WITHIN_BOUNDS';
+      let rePrimedWindow = false;
+      const med = medianFixed(this.smoother.buf);
+      if (abs64(med - this.mean) > 2n * this.sd) {
+        this.smoother = new RobustSmoother(this.hampelWindow, this.hampelK);
+        for (const q of BASELINE_PRIMING) {
+          this.smoother.hampelOnly(q * SCALE);
+        }
+        rePrimedWindow = true;
+      }
+      return {
+        principalReset: true,
+        latched: false,
+        cusumStat: fmtFixed(this.cusum.stat),
+        opacityClips: this.ringCount,
+        clipWindow: this.clipWindow,
+        rePrimedWindow,
+        windowUgnot: this.smoother.buf.map((v) => Number(v / SCALE)),
+      };
+    }
+  }
+
+  const driftSim = new OpacityAwareHampelCusum();
+  let normalIdx = 0;
+  const nextNormalUgnot = () => NORMAL_TICKS[normalIdx++ % NORMAL_TICKS.length];
+  const classifyDriftStatus = (res) => (res.latched ? 'LATCHED' : res.spikeClamped ? 'CLAMPED' : 'PASS');
+
+  function renderDriftMetrics() {
+    const stateEl = $('mDriftState');
+    stateEl.textContent = `${driftSim.step} · ${driftSim.latched ? 'LATCHED' : 'ARMED'}`;
+    stateEl.className = `v ${driftSim.latched ? 'bad' : 'ok'}`;
+    const statEl = $('mDriftStat');
+    statEl.textContent = `${fmtFixed(driftSim.cusum.stat)} / ${fmtFixed(driftSim.h)}`;
+    statEl.className = `v ${driftSim.cusum.stat > driftSim.h ? 'bad' : driftSim.cusum.stat > 0n ? 'warn' : ''}`;
+    const clipsEl = $('mDriftClips');
+    clipsEl.textContent = `${driftSim.ringCount} / ${driftSim.minClips}`;
+    clipsEl.className = `v ${driftSim.ringCount >= driftSim.minClips ? 'bad' : driftSim.ringCount > 0 ? 'warn' : ''}`;
+    $('mDriftChannel').textContent = driftSim.lastChannel;
+    $('mDriftWindow').textContent = `[${driftSim.smoother.buf.map((v) => Number(v / SCALE)).join(', ')}]`;
+  }
+  renderDriftMetrics();
+
+  $('btnDriftNormal').onclick = () => {
+    const u = nextNormalUgnot();
+    const res = driftSim.evaluate(u);
+    renderDriftMetrics();
+    const st = classifyDriftStatus(res);
+    const detail = res.latched
+      ? 'DRIFT_CIRCUIT_BREAKER_LATCHED — principal Reset() required'
+      : res.spikeClamped
+        ? `Sample ${u} ugnot clamped to ${res.hampelCleanedUgnot} ugnot (unlatched)`
+        : `Normal volatile tick (${u} ugnot) within calibrated baseline`;
+    show(res, st, detail);
+  };
+  $('btnDriftSpike').onclick = () => {
+    const res = driftSim.evaluate(450);
+    renderDriftMetrics();
+    const st = classifyDriftStatus(res);
+    const detail = res.latched
+      ? `LATCHED via ${res.channel} (${res.opacityClips}/${res.minClips} clips in ${res.clipWindow} ticks)`
+      : `Flash-spike 450 ugnot (+23.3σ) clamped -> ${res.hampelCleanedUgnot} ugnot (${res.opacityClips}/${res.minClips} clips < ${res.minClips}, unlatched)`;
+    show(res, st, detail);
+  };
+  $('btnDriftBurst').onclick = () => {
+    const res = driftSim.evaluate(250);
+    renderDriftMetrics();
+    const st = classifyDriftStatus(res);
+    const detail = res.latched
+      ? `LATCHED via ${res.channel} (${res.opacityClips}/${res.minClips} clips in ${res.clipWindow} ticks, CUSUM S=${res.cusumStat})`
+      : `MEV burst 250 ugnot (+10.0σ) clamped (${res.opacityClips}/${res.minClips} clips in ${res.clipWindow} ticks)`;
+    show(res, st, detail);
+  };
+  $('btnDriftBurstCycle').onclick = () => {
+    const inputs = [
+      nextNormalUgnot(), nextNormalUgnot(), nextNormalUgnot(),
+      nextNormalUgnot(), nextNormalUgnot(), 250,
+    ];
+    const cycleTrace = inputs.map((u) => {
+      const r = driftSim.evaluate(u);
+      return {
+        tick: r.tick,
+        inputUgnot: u,
+        cleanedUgnot: r.hampelCleanedUgnot ?? null,
+        spikeClamped: Boolean(r.spikeClamped),
+        positiveClipCounted: Boolean(r.positiveClipCounted),
+        cusumStat: r.cusumStat,
+        opacityClips: r.opacityClips,
+        verdict: r.verdict,
+        reasonCode: r.reasonCode,
+        channel: r.channel,
+      };
+    });
+    const last = cycleTrace[cycleTrace.length - 1];
+    renderDriftMetrics();
+    const latched = driftSim.latched;
+    const st = latched ? 'LATCHED' : last.spikeClamped ? 'CLAMPED' : 'PASS';
+    const detail = latched
+      ? `LATCHED via ${last.channel} after 5 normal + 250 burst (${last.opacityClips}/${driftSim.minClips} clips in ${driftSim.clipWindow} ticks)`
+      : `Stepped 5 normal + 250 burst (${last.opacityClips}/${driftSim.minClips} clips in ${driftSim.clipWindow} ticks, unlatched)`;
+    show({
+      verdict: last.verdict,
+      reasonCode: last.reasonCode,
+      channel: last.channel,
+      opacityClips: last.opacityClips,
+      minClips: driftSim.minClips,
+      clipWindow: driftSim.clipWindow,
+      cusumStat: last.cusumStat,
+      latched,
+      cycleTrace,
+    }, st, detail);
+  };
+  $('btnDriftReset').onclick = () => {
+    const res = driftSim.principalReset();
+    renderDriftMetrics();
+    show(res, 'INFO', 'Principal Reset() cleared latch, CUSUM S=0, and opacity clip counter');
+  };
+  $('btnDriftFullReset').onclick = () => {
+    normalIdx = 0;
+    driftSim.initDetector();
+    renderDriftMetrics();
+    show({
+      resetEpisode: true,
+      baseline: { meanUgnot: 100, sdUgnot: 15, hSigma: 5, kSigma: 1, hampelWindow: 5, clipSigma: 4, clipWindow: 24, minClips: 3 },
+      windowUgnot: driftSim.smoother.buf.map((v) => Number(v / SCALE)),
+    }, 'INFO', 'DeFi drift simulator reset to calibrated t=0 episode');
   };
 </script>
 </body>

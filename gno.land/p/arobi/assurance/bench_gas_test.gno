@@ -143,3 +143,107 @@ func TestCrossLanguageGoldenVectorParity(t *testing.T) {
 	println("GOLDEN_ROOT=" + Hex(root))
 	uassert.Equal(t, 64, len(Hex(root)))
 }
+
+func benchMedianVectors16x8() [][]int64 {
+	// 16 exact unit vectors in 8D (||v|| == Scale): 12 clean vectors near +e0 and 4 coordinated outliers near -e0.
+	return [][]int64{
+		{1000000, 0, 0, 0, 0, 0, 0, 0},
+		{800000, 600000, 0, 0, 0, 0, 0, 0},
+		{800000, 0, 600000, 0, 0, 0, 0, 0},
+		{800000, 360000, 480000, 0, 0, 0, 0, 0},
+		{960000, 280000, 0, 0, 0, 0, 0, 0},
+		{960000, 0, 280000, 0, 0, 0, 0, 0},
+		{960000, 0, 0, 280000, 0, 0, 0, 0},
+		{960000, 0, 0, 0, 280000, 0, 0, 0},
+		{960000, 0, 0, 0, 0, 280000, 0, 0},
+		{960000, 0, 0, 0, 0, 0, 280000, 0},
+		{960000, 0, 0, 0, 0, 0, 0, 280000},
+		{800000, 0, 0, 360000, 480000, 0, 0, 0},
+		{-960000, 280000, 0, 0, 0, 0, 0, 0},
+		{-960000, 0, 280000, 0, 0, 0, 0, 0},
+		{-800000, 600000, 0, 0, 0, 0, 0, 0},
+		{-800000, 0, 600000, 0, 0, 0, 0, 0},
+	}
+}
+
+func TestBenchGeometricMedian16x8Gas(t *testing.T) {
+	vecs := benchMedianVectors16x8()
+	gmFixed, err := signals.GeometricMedianFixed(vecs, 8)
+	uassert.NoError(t, err)
+	gmNorm, err := signals.GeometricMedianNormalizedFixed(vecs, 8)
+	uassert.NoError(t, err)
+	uassert.Equal(t, 8, len(gmNorm))
+	uassert.True(t, gmNorm[0] > 900000)
+	for j := range gmFixed {
+		uassert.Equal(t, gmFixed[j], gmNorm[j])
+	}
+}
+
+func TestBenchGeometricMedian16x8FixedGas(t *testing.T) {
+	vecs := benchMedianVectors16x8()
+	gm, err := signals.GeometricMedianFixed(vecs, 8)
+	uassert.NoError(t, err)
+	uassert.True(t, gm[0] > 900000)
+}
+
+func TestBenchGeometricMedian16x8NormalizedGas(t *testing.T) {
+	vecs := benchMedianVectors16x8()
+	gm, err := signals.GeometricMedianNormalizedFixed(vecs, 8)
+	uassert.NoError(t, err)
+	uassert.True(t, gm[0] > 900000)
+}
+
+func TestBenchOpacityDriftAndAntipodalStepGas(t *testing.T) {
+	base := signals.Baseline{MeanFixed: 100 * signals.Scale, SDFixed: 15 * signals.Scale}
+	oa, err := signals.NewOpacityAwareHampelCusum(base, 5*signals.Scale, signals.Scale, 5, 3*signals.Scale, 4*signals.Scale, 24, 3)
+	uassert.NoError(t, err)
+
+	alarm, _, ch, ev := oa.Update(100 * signals.Scale)
+	uassert.False(t, alarm)
+	uassert.Equal(t, "none", ch)
+	uassert.False(t, ev.Alarm)
+
+	vecs := [][]int64{
+		{980000, 199000, 10000, 0, 5000, 0, 0, 0},
+		{990000, 141000, 15000, 0, 4000, 0, 0, 0},
+		{985000, 170000, 12000, 0, 4500, 0, 0, 0},
+		{978000, 205000, 11000, 0, 4200, 0, 0, 0},
+	}
+	ok, frac, antipodalEv, err := signals.AntipodalSplitGate(vecs, -500000, 100000)
+	uassert.NoError(t, err)
+	uassert.True(t, ok)
+	uassert.Equal(t, int64(0), frac)
+	uassert.False(t, antipodalEv.Alarm)
+}
+
+func TestGeometricMedianNormalizedFixedValidationAndParity(t *testing.T) {
+	_, err := signals.GeometricMedianNormalizedFixed(nil, 8)
+	uassert.Error(t, err)
+	_, err = signals.GeometricMedianNormalizedFixed([][]int64{{signals.Scale, 0}}, 8)
+	uassert.Error(t, err)
+	_, err = signals.GeometricMedianNormalizedFixed([][]int64{{}, {}}, 8)
+	uassert.Error(t, err)
+	_, err = signals.GeometricMedianNormalizedFixed([][]int64{{signals.Scale, 0}, {signals.Scale}}, 8)
+	uassert.Error(t, err)
+
+	// Non-unit inputs normalized once match GeometricMedianFixed bit-for-bit.
+	raw := [][]int64{
+		{312450, 418920, -192830, 512340, 223110, -334120, 128900, 441230},
+		{298120, 391230, -181120, 489120, 210900, -310110, 119800, 430110},
+		{305000, 405000, -188000, 501000, 215000, -320000, 124000, 435000},
+		{-450000, -380000, 210000, -490000, -190000, 330000, -110000, -410000},
+	}
+	units := make([][]int64, len(raw))
+	for i, v := range raw {
+		u, uErr := signals.UnitNormalizeFixed(v)
+		uassert.NoError(t, uErr)
+		units[i] = u
+	}
+	gmRaw, err := signals.GeometricMedianFixed(raw, 8)
+	uassert.NoError(t, err)
+	gmUnits, err := signals.GeometricMedianNormalizedFixed(units, 8)
+	uassert.NoError(t, err)
+	for j := range gmRaw {
+		uassert.Equal(t, gmRaw[j], gmUnits[j])
+	}
+}

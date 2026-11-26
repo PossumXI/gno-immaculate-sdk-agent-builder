@@ -6,11 +6,12 @@ import (
 	"errors"
 )
 
-// UnitNormalizeFixed projects a non-zero integer/fixed-point vector onto the unit sphere
-// of radius Scale (1_000_000), deterministically across all validators.
-func UnitNormalizeFixed(vec []int64) ([]int64, error) {
+func unitNormalizeInto(dst, vec []int64) error {
 	if len(vec) == 0 {
-		return nil, errors.New("vector cannot be empty")
+		return errors.New("vector cannot be empty")
+	}
+	if len(dst) != len(vec) {
+		return errors.New("destination vector dimension mismatch")
 	}
 	// Downscale if max abs coordinate exceeds 1_000_000 to prevent uint64 overflow in sum of squares.
 	var maxAbs uint64
@@ -21,7 +22,7 @@ func UnitNormalizeFixed(vec []int64) ([]int64, error) {
 		}
 	}
 	if maxAbs == 0 {
-		return nil, errors.New("zero vector cannot be normalized")
+		return errors.New("zero vector cannot be normalized")
 	}
 
 	shift := uint(0)
@@ -36,10 +37,9 @@ func UnitNormalizeFixed(vec []int64) ([]int64, error) {
 	}
 	norm := ISqrt64(sqSum)
 	if norm == 0 {
-		return nil, errors.New("zero norm after scaling")
+		return errors.New("zero norm after scaling")
 	}
 
-	unit := make([]int64, len(vec))
 	for i, v := range vec {
 		neg := v < 0
 		a := uint64(Abs64(v)) >> shift
@@ -47,24 +47,46 @@ func UnitNormalizeFixed(vec []int64) ([]int64, error) {
 		if neg {
 			val = -val
 		}
-		unit[i] = val
+		dst[i] = val
+	}
+	return nil
+}
+
+// UnitNormalizeFixed projects a non-zero integer/fixed-point vector onto the unit sphere
+// of radius Scale (1_000_000), deterministically across all validators.
+func UnitNormalizeFixed(vec []int64) ([]int64, error) {
+	if len(vec) == 0 {
+		return nil, errors.New("vector cannot be empty")
+	}
+	unit := make([]int64, len(vec))
+	if err := unitNormalizeInto(unit, vec); err != nil {
+		return nil, err
 	}
 	return unit, nil
 }
 
-func validateAndNormalizeSet(vectors [][]int64) ([][]int64, error) {
+func validateVectorSetDimensions(vectors [][]int64) (int, error) {
 	if len(vectors) < 2 {
-		return nil, errors.New("coherence requires at least 2 vectors")
+		return 0, errors.New("coherence requires at least 2 vectors")
 	}
 	dim := len(vectors[0])
 	if dim == 0 {
-		return nil, errors.New("vectors must have positive dimension")
+		return 0, errors.New("vectors must have positive dimension")
+	}
+	for i := 1; i < len(vectors); i++ {
+		if len(vectors[i]) != dim {
+			return 0, errors.New("all vectors in set must share the same dimension")
+		}
+	}
+	return dim, nil
+}
+
+func validateAndNormalizeSet(vectors [][]int64) ([][]int64, error) {
+	if _, err := validateVectorSetDimensions(vectors); err != nil {
+		return nil, err
 	}
 	units := make([][]int64, len(vectors))
 	for i, v := range vectors {
-		if len(v) != dim {
-			return nil, errors.New("all vectors in set must share the same dimension")
-		}
 		u, err := UnitNormalizeFixed(v)
 		if err != nil {
 			return nil, err
@@ -218,11 +240,11 @@ func hashSingleVec(v []int64) [32]byte {
 	return sha256.Sum256(buf)
 }
 
-// discreteMedoidUnit returns the strictly order-invariant discrete L1 medoid of a unit
-// vector set (minimizing sum_j ||u_i - u_j||, breaking exact-distance ties deterministically
-// by canonical vector SHA-256). Eliminates the exact 180-degree cancellation order-dependence
-// discovered in Experiment E7a (cross-referencing @frintroper/Symmetry-No-Symmetry).
-func discreteMedoidUnit(units [][]int64) []int64 {
+// discreteMedoidIndex returns the index of the strictly order-invariant discrete L1 medoid
+// of a unit vector set (minimizing sum_j ||u_i - u_j||, breaking exact-distance ties
+// deterministically by canonical vector SHA-256). Eliminates the exact 180-degree cancellation
+// order-dependence discovered in Experiment E7a (cross-referencing @frintroper/Symmetry-No-Symmetry).
+func discreteMedoidIndex(units [][]int64) int {
 	n := len(units)
 	dim := len(units[0])
 	bestIdx := 0
@@ -251,22 +273,11 @@ func discreteMedoidUnit(units [][]int64) []int64 {
 			bestIdx = i
 		}
 	}
-	out := make([]int64, dim)
-	copy(out, units[bestIdx])
-	return out
+	return bestIdx
 }
 
-// GeometricMedianFixed computes the deterministic fixed-point L1 Geometric Median on the
-// unit sphere via Weiszfeld's iterative reweighting initialized at the order-invariant
-// discrete L1 medoid (50% breakdown point against coordinated outlier clusters; pure integer
-// arithmetic, zero floats, strictly order-invariant even under exact 180-degree cancellation).
-//
-// Mathematical basis: Weiszfeld (1937) / Vardi & Zhang (2000), solving sum_j (u_j - m)/||u_j - m|| = 0,
-// independently validated in Experiments E5 & E7 after cross-referencing pairwise unit-difference
-// relational fields and 180-degree symmetry stasis (Johannes Geisen / @frintroper).
-func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
-	units, err := validateAndNormalizeSet(vectors)
-	if err != nil {
+func geometricMedianOnUnits(units [][]int64, iters int) ([]int64, error) {
+	if _, err := validateVectorSetDimensions(units); err != nil {
 		return nil, err
 	}
 	if iters <= 0 {
@@ -275,12 +286,16 @@ func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
 	dim := len(units[0])
 	n := len(units)
 
-	// Strictly order-invariant discrete L1 medoid initialization (immune to exact 180-deg cancellation).
-	med := discreteMedoidUnit(units)
+	// Allocate working buffers once outside the Weiszfeld loop.
+	num := make([]int64, dim)
+	med := make([]int64, dim)
+	copy(med, units[discreteMedoidIndex(units)])
 
 	const epsDist int64 = 1000 // 0.001 in Scale units prevents 0/0 singularity
 	for it := 0; it < iters; it++ {
-		num := make([]int64, dim)
+		for j := 0; j < dim; j++ {
+			num[j] = 0
+		}
 		var den int64
 		for i := 0; i < n; i++ {
 			var sq uint64
@@ -307,13 +322,37 @@ func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
 		if den == 0 {
 			break
 		}
-		next, nErr := UnitNormalizeFixed(num)
-		if nErr != nil {
+		if err := unitNormalizeInto(med, num); err != nil {
 			break
 		}
-		med = next
 	}
 	return med, nil
+}
+
+// GeometricMedianFixed computes the deterministic fixed-point L1 Geometric Median on the
+// unit sphere via Weiszfeld's iterative reweighting initialized at the order-invariant
+// discrete L1 medoid (50% breakdown point against coordinated outlier clusters; pure integer
+// arithmetic, zero floats, strictly order-invariant even under exact 180-degree cancellation).
+//
+// Mathematical basis: Weiszfeld (1937) / Vardi & Zhang (2000), solving sum_j (u_j - m)/||u_j - m|| = 0,
+// independently validated in Experiments E5 & E7 after cross-referencing pairwise unit-difference
+// relational fields and 180-degree symmetry stasis (Johannes Geisen / @frintroper).
+func GeometricMedianFixed(vectors [][]int64, iters int) ([]int64, error) {
+	units, err := validateAndNormalizeSet(vectors)
+	if err != nil {
+		return nil, err
+	}
+	return geometricMedianOnUnits(units, iters)
+}
+
+// GeometricMedianNormalizedFixed computes the deterministic fixed-point L1 Geometric Median
+// directly over pre-normalized unit vectors (each scaled to Scale), skipping redundant
+// UnitNormalizeFixed allocations and square-root passes.
+func GeometricMedianNormalizedFixed(units [][]int64, iters int) ([]int64, error) {
+	if _, err := validateVectorSetDimensions(units); err != nil {
+		return nil, err
+	}
+	return geometricMedianOnUnits(units, iters)
 }
 
 // AntipodalFractionFixed computes the strictly order-invariant fraction (in [0, Scale]) of
