@@ -28,12 +28,13 @@
   *(Pure library packages: `gno.land/p/<namespace>/signals` and `gno.land/p/<namespace>/assurance`. For code review, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`.)*
 - **Is this a new project, or one started before Gnome Tavern?**
   > Brand-new SDK built on Gno.land: fixed-point signal assurance library, Familiar and Governed MemoryVault runtime, stdio MCP server, `gnosh.ai`/`Ullumii`/local-GPU adapters, interactive browser verifier, and pre-registered scientific benchmark suite (E1–E5 + Live Benchmarks) built from scratch for the Gnome Tavern Hackathon.
-- **On-Chain Onyx (`onyx-1`) Proof Table (for `#gnome-tavern-hackathon` `enablepkg` activation):**
-  | Package / Realm | Status |
+- **On-Chain Onyx (`onyx-1`) Proof Table (verified via `node scripts/check-onyx-status.mjs`):**
+  | Package / Realm | Status on `onyx-1` |
   | --- | --- |
-  | `gno.land/p/<namespace>/signals` | Submitted to `onyx-1`, awaiting `enablepkg` |
-  | `gno.land/p/<namespace>/assurance` | Submitted to `onyx-1`, awaiting `enablepkg` |
-  | `gno.land/r/<namespace>/assurance` | Submitted to `onyx-1`, awaiting `enablepkg` |
+  | `gno.land/p/<namespace>/signals` | **`ACTIVE` on `onyx-1`** (queryable live via `gnokey query vm/qfile`) |
+  | `gno.land/p/<namespace>/assurance` | **`SUBMITTED_INERT`** in `vm/qinertpaths`, awaiting Onyx approver `enablepkg` |
+  | `gno.land/r/<namespace>/assurance` | **`SUBMITTED_INERT`** in `vm/qinertpaths`, awaiting Onyx approver `enablepkg` |
+  | `gno.land/p|r/<namespace>/*/v2` (`signals/v2`, `assurance/v2`, `effects/v2`) | Staged via `scripts/deploy-onyx.sh` with flat-gas AVL storage (`17.8×` gas cut) & checked-not-asserted `r/arobi/effects` |
 
   Transaction hashes, deploy block heights, gas used, and the deployer bech32 namespace are omitted from this public file because they identify the deployer account. Share the live paths with judges privately if they need to confirm the on-chain submission.
 
@@ -43,10 +44,10 @@
 
 | Criterion (Weight) | What Judges Can Verify Immediately |
 | --- | --- |
-| **Technical Quality (40%)** | Zero-float fixed-point Gno (`Scale = 1,000,000`), `gno lint` = 0, 28/28 real Gno v1.8.0 unit tests, 6/6 Node tests (offline verifier, `gnosh.ai`/`Ullumii`/Local-LLM adapters, live stdio MCP server), green Ubuntu CI. |
+| **Technical Quality (40%)** | Zero-float fixed-point Gno (`Scale = 1,000,000`), `gno lint` = 0, `42/42` real Gno v1.8.0 unit tests + `6/6` `r/arobi/effects` acceptance txtars, `20/20` Node tests (offline verifiers, real `gnosh.ai` stream capture, `Ullumii`/Local-LLM adapters, live stdio MCP server), green Ubuntu + Windows CI. |
 | **User Appeal (20%)** | Fluent `NewAgentBuilder` & `BuildFamiliar` DX, `gnoweb` explorer (`/`, `/demo`, `/familiar`, `/benchmarks`), plus interactive browser verifier & MemoryVault playground (`web/index.html`). |
-| **Creativity (20%)** | Consensus-safe `HampelCusum` drift circuit breaker (`25×` spike FPR cut), Overlap-Weighted Hybrid RRF `MemoryVault` (`100%` Top-1 recall / `0%` poison), L1 `GeometricMedianFixed` (`0.9299` ROC-AUC), Wilson Trust auto-suspension, and live sovereign local GPU (`Inkling-2-Mini-Uncensored`) governance. |
-| **Docs & Demo (20%)** | Full `README.md`, `CONTRIBUTORS.md`, pre-registered `experiments/PROTOCOL.md`, `experiments/RESULTS.md` (E1–E5), and real-hardware `experiments/LIVE_BENCHMARKS.md`. |
+| **Creativity (20%)** | Checked-not-asserted `r/arobi/effects` partial-effect lifecycle, `17.8×` flat-gas AVL storage, Wildberger rational quadrance (`-48.7%` gas), `AR(1)` prewhitened `Hampel-CUSUM`, Overlap-Weighted Hybrid RRF `MemoryVault` (`100%` Top-1 / `0%` poison), and sovereign local GPU governance. |
+| **Docs & Demo (20%)** | `README.md`, `WALKTHROUGH.md` (with scope & attribution boundaries + 3/6-month retention plan), `CONTRIBUTORS.md`, `experiments/PROTOCOL.md`, `experiments/RESULTS.md` (`E1–E14`, `27/27` verdicts), and `experiments/LIVE_BENCHMARKS.md`. |
 
 ---
 

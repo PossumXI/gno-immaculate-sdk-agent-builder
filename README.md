@@ -147,8 +147,9 @@ The live Onyx package and realm paths used a deployer-address namespace (`gno.la
 | `web/index.html` | Interactive browser RFC 6962 verifier, Familiar MemoryVault poison-quarantine simulator, Adena tx builder, and live `onyx-1` RPC explorer. |
 | `examples/` | Runnable, GnoVM-tested end-to-end examples: DeFi Treasury Rebalancer (`BuildDeFiTreasuryAgent`) and Multi-Agent Attenuated Delegation (`BuildCoordinatorAndWorker`). |
 | `verifier/` | Zero-dependency standalone Node.js RFC 6962 offline evidence verifier (`verify-evidence.mjs`), and the offline check of one effect's whole life (`verify-effect.mjs`). |
-| `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible E1–E5 benchmark runner (`run_experiments.mjs` → `RESULTS.md`), and **Live Public Benchmarks** (`run_live_benchmarks.mjs` → `LIVE_BENCHMARKS.md`). |
-| `CONTRIBUTORS.md` / `HACKATHON_SUBMISSION.md` | Team roles, GitHub task assignments (`@iShowLinux`, `@ShadowPlague21`), and compliant Gnome Tavern submission guide. |
+| `experiments/` | Pre-registered scientific protocol (`PROTOCOL.md`), reproducible E1–E14 benchmark runner (`run_experiments.mjs` → `RESULTS.md`), and **Live Public Benchmarks** (`run_live_benchmarks.mjs` → `LIVE_BENCHMARKS.md`). |
+| `WALKTHROUGH.md` / `scripts/check-onyx-status.mjs` | Step-by-step independent reproduction walkthrough, live `onyx-1` active vs. `qinertpaths` status verifier, scope boundaries, and 3/6-month Gnome Tavern roadmap. |
+| `CONTRIBUTORS.md` / `HACKATHON_SUBMISSION.md` | Team roles, GitHub task assignments (`@iShowLinux`, `@ShadowPlague21`, `@canderson777`), and compliant Gnome Tavern submission guide. |
 
 ---
 

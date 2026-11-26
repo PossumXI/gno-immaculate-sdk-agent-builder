@@ -235,3 +235,24 @@ test('Immaculate MCP stdio server runs governed execution, memory quarantine, hy
     client.close();
   }
 });
+
+test('Immaculate MCP stdio server exits cleanly with code 0 on ping/shutdown and stdin EOF (gnosh teardown)', async () => {
+  const child = spawn(process.execPath, [SERVER_PATH], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = [];
+  const rl = readline.createInterface({ input: child.stdout });
+  rl.on('line', (l) => lines.push(JSON.parse(l)));
+
+  const exitPromise = new Promise((resolve) => {
+    child.on('exit', (code, signal) => resolve({ code, signal }));
+  });
+
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }) + '\n');
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'shutdown', params: {} }) + '\n');
+  child.stdin.end();
+
+  const { code } = await exitPromise;
+  rl.close();
+  assert.equal(code, 0);
+  assert.deepEqual(lines[0], { jsonrpc: '2.0', id: 1, result: {} });
+  assert.deepEqual(lines[1], { jsonrpc: '2.0', id: 2, result: null });
+});
