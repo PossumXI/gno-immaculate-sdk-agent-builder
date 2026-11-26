@@ -96,7 +96,7 @@ func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	}
 	uassert.Error(t, alarmErr)
 	uassert.True(t, dg.Latched())
-	uassert.Equal(t, assurance.VerdictEscalate, alarmBundle.Decision.Verdict)
+	uassert.Equal(t, string(assurance.VerdictEscalate), string(alarmBundle.Decision.Verdict))
 
 	// Phase 3: Latched breaker fails closed on subsequent normal ticks until principal resets it.
 	ok, _, _, err := cg.StageContext(coherent)
