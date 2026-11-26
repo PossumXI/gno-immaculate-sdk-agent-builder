@@ -174,8 +174,8 @@ func TestDeFiTreasuryMemoryVaultColdStartAndAntipodalStress(t *testing.T) {
 	uassert.Equal(t, 0, purged)
 
 	// Grounded execution binds MemoryRecallProof into PolicyInputProjection.ContextDigest.
-	out, bundle, proof, err := vault.ExecuteWithMemory(
-		ag,
+	out, bundle, proof, err := ag.ExecuteWithMemory(
+		vault,
 		cg,
 		"g1keeper",
 		"rebalance",
