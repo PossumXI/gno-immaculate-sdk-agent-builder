@@ -477,10 +477,50 @@ function handleToolCall(name, args = {}) {
 }
 
 function send(msg) {
-  process.stdout.write(JSON.stringify(msg) + '\n');
+  if (!process.stdout.writable) return;
+  try {
+    process.stdout.write(JSON.stringify(msg) + '\n');
+  } catch {
+    // Ignore broken pipe during harness teardown.
+  }
 }
 
+let shuttingDown = false;
+function gracefulShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    rl.close();
+  } catch {
+    // Ignore close races.
+  }
+  process.exit(0);
+}
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+process.stdin.on('error', (err) => {
+  if (!err || err.code === 'EOF' || err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') {
+    gracefulShutdown();
+    return;
+  }
+  gracefulShutdown();
+});
+process.stdout.on('error', (err) => {
+  if (!err || err.code === 'EPIPE' || err.code === 'EOF' || err.code === 'ERR_STREAM_DESTROYED') {
+    gracefulShutdown();
+    return;
+  }
+  gracefulShutdown();
+});
+
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('close', () => {
+  if (!shuttingDown) {
+    shuttingDown = true;
+    process.exitCode = 0;
+  }
+});
 rl.on('line', (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
@@ -493,7 +533,7 @@ rl.on('line', (line) => {
   }
 
   const { id, method, params } = req;
-  if (method === 'notifications/initialized') return;
+  if (method === 'notifications/initialized' || method === 'notifications/cancelled') return;
 
   try {
     if (method === 'initialize') {
@@ -506,6 +546,13 @@ rl.on('line', (line) => {
           capabilities: { tools: {} },
         },
       });
+    } else if (method === 'ping') {
+      send({ jsonrpc: '2.0', id, result: {} });
+    } else if (method === 'shutdown') {
+      send({ jsonrpc: '2.0', id, result: null });
+      setImmediate(gracefulShutdown);
+    } else if (method === 'exit') {
+      gracefulShutdown();
     } else if (method === 'tools/list') {
       send({ jsonrpc: '2.0', id, result: { tools: TOOLS } });
     } else if (method === 'tools/call') {
@@ -518,10 +565,12 @@ rl.on('line', (line) => {
           structuredContent: data,
         },
       });
-    } else {
+    } else if (id !== undefined && id !== null) {
       send({ jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } });
     }
   } catch (err) {
-    send({ jsonrpc: '2.0', id, error: { code: -32000, message: String(err.message || err) } });
+    if (id !== undefined && id !== null) {
+      send({ jsonrpc: '2.0', id, error: { code: -32000, message: String(err.message || err) } });
+    }
   }
 });
