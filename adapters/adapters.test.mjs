@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   GnoshAssuranceSession,
   harnessFrameDigest,
+  ASSURANCE_REALM_PATH,
   estimateGnoshContextBudget,
   inspectSkillPreflight,
   buildGnoshPeersPlanGno,
@@ -255,4 +257,41 @@ test('estimateGnoshContextBudget, inspectSkillPreflight, and buildGnoshPeersPlan
   assert.ok(plan.gnoCode.includes('grp := root.Todo("work", "Run independent tasks in parallel").Parallel()'));
   assert.ok(plan.gnoCode.includes('mem.Next()'));
   assert.throws(() => buildGnoshPeersPlanGno({ parallelSteps: [{ name: 'only_one', title: 'one' }] }));
+});
+
+// Captured from a real `gnosh -p --output-format stream-json --verbose` run,
+// then scrubbed of machine-specific paths and host details. Unlike the
+// synthetic streams above these are genuine harness frames: system/init,
+// assistant tool_use, user tool_result and result/success.
+test('real gnosh.ai stream-json capture produces verified bundles and an AnchorCheckpoint tx', () => {
+  const ndjson = fs.readFileSync(
+    new URL('./fixtures/gnosh-live-stream.ndjson', import.meta.url),
+    'utf8'
+  );
+
+  const session = new GnoshAssuranceSession({
+    agentId: 'gnosh-live-capture',
+    principal: 'g1principal000000000000000000000000000000',
+    caller: 'g1operator0000000000000000000000000000000',
+    sessionId: 'gnosh-live-session',
+  });
+
+  const bundles = session.ingestNdjsonStream(ndjson, 1000);
+
+  // The captured run made two tool calls; each must yield one governed receipt.
+  assert.equal(bundles.length, 2);
+  assert.equal(bundles[0].harnessFrame.action, 'gnovm_run');
+  assert.equal(bundles[1].harnessFrame.action, 'bash');
+  assert.equal(bundles[1].harnessFrame.target, 'echo hello-from-gnosh');
+  for (const b of bundles) {
+    assert.equal(verifyEvidenceBundle(b).verified, true);
+    assert.match(harnessFrameDigest(b.harnessFrame), /^[0-9a-f]{64}$/);
+  }
+  assert.equal(session.sessionMeta.cwd, '/workspace/gnosh-capture');
+
+  const tx = session.buildAnchorCheckpointTx(1000);
+  assert.equal(tx.messages[0].value.pkg_path, ASSURANCE_REALM_PATH);
+  assert.equal(tx.messages[0].value.func, 'AnchorCheckpoint');
+  assert.equal(tx.messages[0].value.args[0], 'gnosh-live-capture');
+  assert.equal(tx.messages[0].value.args[3], '4'); // 2 receipts + 2 closures
 });

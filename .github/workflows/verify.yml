@@ -16,6 +16,22 @@ jobs:
       - name: Run standalone RFC 6962 verifier, Ullumii/gnosh.ai adapters, & MCP stdio server tests
         run: node --test verifier/verify-evidence.test.mjs verifier/verify-effect.test.mjs adapters/adapters.test.mjs mcp/immaculate-mcp-server.test.mjs
 
+  gno-tests-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      # reproduce.sh clones and builds Gno v1.8.0 itself, then runs all three
+      # stages, so Windows coverage needs no extra setup here.
+      - name: Reproduce every check (builds Gno v1.8.0)
+        shell: bash
+        run: bash scripts/reproduce.sh
+
   gno-tests:
     runs-on: ubuntu-latest
     steps:
