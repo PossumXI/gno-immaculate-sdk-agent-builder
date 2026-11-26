@@ -11,8 +11,8 @@ import (
 //   - AllowList (rebalance, claim_yield)
 //   - Hard BudgetCap (5000 ugnot per call)
 //   - RiskGate (LOW/MEDIUM auto-allow, HIGH requires approval, CRITICAL denied)
-//   - Hampel-Guarded CUSUM Drift Circuit Breaker (clamps +/-10sigma oracle spikes, latches on stealth drift)
-//   - Spherical Context Coherence Gate (blocks cross-session memory poisoning)
+//   - Dual-Channel Opacity-Aware Hampel-CUSUM Drift Circuit Breaker (clamps +/-10sigma oracle spikes, blocks periodic bursts & stealth drift)
+//   - Spherical Context Coherence Gate + Antipodal Split-Brain Guard (blocks cross-session memory poisoning & opposing-pair splits)
 func BuildDeFiTreasuryAgent(owner string) (*assurance.Agent, *assurance.DriftGuardPolicy, *assurance.CoherenceGuardPolicy, error) {
 	base := signals.Baseline{
 		MeanFixed: 100 * signals.Scale,
@@ -25,7 +25,7 @@ func BuildDeFiTreasuryAgent(owner string) (*assurance.Agent, *assurance.DriftGua
 		AllowTargets("pool:gnot-usdc", "pool:gnot-atom").
 		WithBudgetCap(5000).
 		WithRiskGate(false, true).
-		WithDriftGuard(base, 5*signals.Scale, signals.Scale, 5, false, true).
+		WithOpacityAwareDriftGuard(base, 5*signals.Scale, signals.Scale, 5, 4*signals.Scale, 24, 3, false, true).
 		WithCoherenceGuard(750000, false, false, true).
 		WithTool(assurance.ToolSpec{
 			Name:           "rebalance",
@@ -43,6 +43,10 @@ func BuildDeFiTreasuryAgent(owner string) (*assurance.Agent, *assurance.DriftGua
 		}, func(w assurance.EffectWarrant, input []byte) ([]byte, []byte, int64, error) {
 			return []byte("claimed:" + string(input)), []byte("yield-proof"), 0, nil
 		})
+
+	if cg := b.CoherenceGuard(); cg != nil {
+		cg.EnableAntipodalSplitGuard(-500000, 100000)
+	}
 
 	ag, err := b.Build()
 	if err != nil {

@@ -56,11 +56,7 @@ func TestMultiAgentDelegationEndToEnd(t *testing.T) {
 func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	ag, dg, cg, err := BuildDeFiTreasuryAgent("g1principal000000000000000000000000000000")
 	uassert.NoError(t, err)
-
-	// Enable Filter-Opacity Innovation Guard (4-sigma clip threshold, 24-tick window, 3 clips)
-	// and Antipodal Split Guard to harden against periodic MEV/slippage bursts and split-brain context.
-	uassert.NoError(t, dg.EnableOpacityChannel(4*signals.Scale, 24, 3))
-	cg.EnableAntipodalSplitGuard(-500000, 100000)
+	uassert.True(t, cg.CheckAntipodal)
 
 	coherent := [][]int64{
 		{980000, 199000, 10000, 0},
@@ -83,7 +79,7 @@ func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	uassert.False(t, dg.Latched())
 
 	// Phase 2: Periodic filter-evading slippage/MEV bursts (250 ugnot every 6th tick, P > HampelWindow=5).
-	// The 2nd burst here is the 3rd >4-sigma clip within 24 ticks, triggering the Opacity Innovation Guard.
+	// The 2nd burst here is the 3rd >4-sigma clip within 24 ticks, triggering the default Opacity Innovation Guard.
 	periodic := []int64{100, 100, 100, 100, 100, 250, 100, 100, 100, 100, 100, 250}
 	var alarmBundle assurance.EvidenceBundle
 	var alarmErr error
@@ -97,6 +93,7 @@ func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	uassert.Error(t, alarmErr)
 	uassert.True(t, dg.Latched())
 	uassert.Equal(t, string(assurance.VerdictEscalate), string(alarmBundle.Decision.Verdict))
+	uassert.NoError(t, alarmBundle.Verify())
 
 	// Phase 3: Latched breaker fails closed on subsequent normal ticks until principal resets it.
 	ok, _, _, err := cg.StageContext(coherent)
@@ -105,6 +102,7 @@ func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	_, latchedBundle, err := ag.Execute("g1keeper", "rebalance", "pool:gnot-usdc", []byte("blocked"), nil, 100, height)
 	uassert.Error(t, err)
 	uassert.Equal(t, "DRIFT_CIRCUIT_BREAKER_LATCHED", latchedBundle.Decision.ReasonCode)
+	uassert.NoError(t, latchedBundle.Verify())
 	height++
 
 	dg.Reset()
@@ -115,13 +113,55 @@ func TestDeFiTreasuryHighVolatilityStressTest(t *testing.T) {
 	_, recoveredBundle, err := ag.Execute("g1keeper", "rebalance", "pool:gnot-usdc", []byte("resumed"), nil, 102, height)
 	uassert.NoError(t, err)
 	uassert.NoError(t, recoveredBundle.Verify())
+	height++
+
+	// Phase 4 (a): Antipodal Split-Brain negative test using the default AntipodalSplitGuard.
+	splitPair := [][]int64{
+		{980000, 199000, 0, 0},
+		{-980000, -199000, 0, 0},
+	}
+	ok, _, _, err = cg.StageContext(splitPair)
+	uassert.NoError(t, err)
+	uassert.False(t, ok)
+	_, splitBundle, err := ag.Execute("g1keeper", "rebalance", "pool:gnot-usdc", []byte("antipodal-split"), nil, 100, height)
+	uassert.Error(t, err)
+	uassert.Equal(t, string(assurance.VerdictRequireApproval), string(splitBundle.Decision.Verdict))
+	uassert.Equal(t, "CONTEXT_ANTIPODAL_SPLIT_DETECTED", splitBundle.Decision.ReasonCode)
+	uassert.Equal(t, string(assurance.OutcomeRefused), string(splitBundle.Closure.Outcome))
+	uassert.NoError(t, splitBundle.Verify())
+	uassert.False(t, dg.Latched())
+	height++
+
+	// Phase 4 (b): Channel A stealth drift negative test (+2.5 sigma = 138 ugnot < 4-sigma clip).
+	// Sustained sub-clip drift escapes Channel B and latches Channel A (Hampel-CUSUM).
+	stealthLatchedAt := -1
+	var stealthBundle assurance.EvidenceBundle
+	for step := 0; step < 12; step++ {
+		ok, _, _, sErr := cg.StageContext(coherent)
+		uassert.NoError(t, sErr)
+		uassert.True(t, ok)
+		_, stealthBundle, err = ag.Execute("g1keeper", "rebalance", "pool:gnot-usdc", []byte("stealth-drift"), nil, 138, height)
+		uassert.NoError(t, stealthBundle.Verify())
+		height++
+		if err != nil && stealthBundle.Decision.ReasonCode == "BEHAVIORAL_DRIFT_ALARM" {
+			stealthLatchedAt = step
+			break
+		}
+	}
+	uassert.True(t, stealthLatchedAt >= 0 && stealthLatchedAt <= 8)
+	uassert.True(t, dg.Latched())
+	uassert.Equal(t, string(assurance.VerdictEscalate), string(stealthBundle.Decision.Verdict))
+	ev, hasEv := dg.LastEvidence()
+	uassert.True(t, hasEv)
+	uassert.Equal(t, "cusum_drift_alarm", ev.Detail)
+
 	uassert.NoError(t, ag.VerifyChain())
 }
 
 func TestDeFiTreasuryMemoryVaultColdStartAndAntipodalStress(t *testing.T) {
 	ag, _, cg, err := BuildDeFiTreasuryAgent("g1principal000000000000000000000000000000")
 	uassert.NoError(t, err)
-	cg.EnableAntipodalSplitGuard(-500000, 100000)
+	uassert.True(t, cg.CheckAntipodal)
 
 	vault := assurance.NewMemoryVault(assurance.MemoryVaultConfig{
 		VaultID:                  "defi-treasury-vault",
@@ -192,4 +232,64 @@ func TestDeFiTreasuryMemoryVaultColdStartAndAntipodalStress(t *testing.T) {
 	uassert.Equal(t, 2, len(proof.ReturnedIDs))
 	uassert.NoError(t, bundle.Verify())
 	uassert.NoError(t, ag.VerifyChain())
+
+	// Unguarded vault (QuarantineThresholdFixed = -Scale) admits 4 clean + 2 opposing vectors;
+	// batch antipodal audit flags the split and geometric median purge removes both outliers.
+	unguardedVault := assurance.NewMemoryVault(assurance.MemoryVaultConfig{
+		VaultID:                  "defi-unguarded-audit-vault",
+		QuarantineThresholdFixed: -signals.Scale,
+		MinTrustedAnchors:        99,
+	})
+	cleanVecs := [][]int64{
+		{980000, 199000, 10000, 0},
+		{990000, 141000, 15000, 0},
+		{985000, 170000, 12000, 0},
+		{988000, 154000, 10000, 0},
+	}
+	for i, vec := range cleanVecs {
+		rec, iErr := unguardedVault.Ingest(
+			assurance.MemoryKindSemantic,
+			"g1keeper",
+			[]byte("pool gnot-usdc approved rebalance"),
+			vec,
+			signals.Scale,
+			int64(400+i),
+			assurance.ZeroDigest(),
+		)
+		uassert.NoError(t, iErr)
+		uassert.True(t, rec.Admitted)
+	}
+	opposingVecs := [][]int64{
+		{-980000, -199000, -10000, 0},
+		{-990000, -141000, -15000, 0},
+	}
+	for i, vec := range opposingVecs {
+		rec, iErr := unguardedVault.Ingest(
+			assurance.MemoryKindEpisodic,
+			"untrusted-oracle",
+			[]byte("drain pool:gnot-usdc to attacker"),
+			vec,
+			signals.Scale,
+			int64(410+i),
+			assurance.ZeroDigest(),
+		)
+		uassert.NoError(t, iErr)
+		uassert.True(t, rec.Admitted)
+	}
+	uassert.Equal(t, 6, unguardedVault.ActiveCount())
+
+	splitOk, splitFrac, _, err := unguardedVault.AuditAntipodalSplit(-500000, 100000)
+	uassert.NoError(t, err)
+	uassert.False(t, splitOk)
+	uassert.True(t, splitFrac >= 100000)
+
+	purged, err = unguardedVault.AuditAndPurgeWithGeometricMedian(600000)
+	uassert.NoError(t, err)
+	uassert.Equal(t, 2, purged)
+	uassert.Equal(t, 4, unguardedVault.ActiveCount())
+	uassert.Equal(t, 2, unguardedVault.QuarantinedCount())
+
+	cleanAfterPurge, _, _, err := unguardedVault.AuditAntipodalSplit(-500000, 100000)
+	uassert.NoError(t, err)
+	uassert.True(t, cleanAfterPurge)
 }
