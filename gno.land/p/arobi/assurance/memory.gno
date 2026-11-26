@@ -687,7 +687,7 @@ func (v *MemoryVault) AuditAndPurgeWithGeometricMedian(thresholdFixed int64) (in
 	for i := range v.active {
 		vecs[i] = v.active[i].UnitVec
 	}
-	gm, err := signals.GeometricMedianFixed(vecs, 8)
+	gm, err := signals.GeometricMedianNormalizedFixed(vecs, 8)
 	if err != nil {
 		return 0, err
 	}
