@@ -126,11 +126,25 @@ Measured against **real running systems** (reproducible via `node experiments/ru
 
 ---
 
-## Live Gno.land Onyx Testnet (`onyx-1`) Submission Proof
+## Live on the Gno.land Onyx testnet (`onyx-1`)
 
-Submitted on-chain to `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`; currently parked in Onyx's `code_submission_policy = "inert"` approver activation queue — verifiable via `gnokey query vm/qinertpaths`).
+The current code (this repository at `a01ee77`) is live on `onyx-1` (`https://rpc.onyx.testnets.gno.land:443`) under the
+project's deployer namespace `g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak`. Onyx's package approver enabled all four on 2026-11-27, by 12:35 UTC:
 
-The live Onyx package and realm paths used a deployer-address namespace (`gno.land/p/<namespace>/...` and `gno.land/r/<namespace>/...`). Those on-chain paths, transaction hashes, and deploy block heights are omitted from this public README because they identify the deployer account. To review and run the code, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`. After `enablepkg`, the public `gnoweb` URL will be `https://onyx.testnets.gno.land/r/<namespace>/assurance`.
+| Path | Kind | Deployed at height | Open |
+| --- | --- | --- | --- |
+| `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2` | package | 1,450,918 | [gnoweb](https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2) |
+| `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2` | package | 1,450,922 | [gnoweb](https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2) |
+| `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2` | realm | 1,450,924 | [gnoweb](https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2) |
+| `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2` | realm | 1,450,926 | [gnoweb](https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2) |
+
+- **Why `/v2`.** A Gno package path is immutable once submitted. The first submission (the 2026-11-23 code) stays live
+  under an earlier namespace. `/v2` carries the flat-gas AVL storage (#11) and the checked-not-asserted effect lifecycle
+  (`r/arobi/effects`, #16). `scripts/deploy-onyx.sh` stages it.
+- **Check it yourself.** `node scripts/check-onyx-status.mjs --namespace g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak` reads each path's files and the approval
+  queue from the chain.
+- **Operator.** Each realm's operator is the deployer, bound once in `init()`. No payout wallet appears in source, in
+  gnoweb or in events.
 
 ---
 
