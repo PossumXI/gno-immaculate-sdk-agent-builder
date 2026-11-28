@@ -21,22 +21,24 @@
 ## Copy-Paste DoraHacks `Submit Build` Modal Fields
 
 - **Gno.land testnet deployment link (`gnoweb` URL):**
-  `https://onyx.testnets.gno.land/r/<namespace>/assurance`
-  *(Note: Submitted on-chain to `onyx-1` and verifiable via `gnokey query vm/qinertpaths` while awaiting Onyx `enablepkg` approver activation. The live path used a deployer-address namespace and is omitted from this public file.)*
+  `https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2`
+  *(Live on `onyx-1` since 2026-11-27, enabled by Onyx's package approver. The effect-lifecycle realm is
+  `https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2`.)*
 - **Realm or package path:**
-  `gno.land/r/<namespace>/assurance`
-  *(Pure library packages: `gno.land/p/<namespace>/signals` and `gno.land/p/<namespace>/assurance`. For code review, use the in-repo paths `gno.land/p/arobi/signals`, `gno.land/p/arobi/assurance`, and `gno.land/r/arobi/assurance`.)*
+  `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2`
+  *(Also live: the realm `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2`, and the library packages `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2` and
+  `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2`.)*
 - **Is this a new project, or one started before Gnome Tavern?**
   > Brand-new SDK built on Gno.land: fixed-point signal assurance library, Familiar and Governed MemoryVault runtime, stdio MCP server, `gnosh.ai`/`Ullumii`/local-GPU adapters, interactive browser verifier, and pre-registered scientific benchmark suite (E1–E5 + Live Benchmarks) built from scratch for the Gnome Tavern Hackathon.
-- **On-Chain Onyx (`onyx-1`) Proof Table (verified via `node scripts/check-onyx-status.mjs`):**
-  | Package / Realm | Status on `onyx-1` |
-  | --- | --- |
-  | `gno.land/p/<namespace>/signals` | **`ACTIVE` on `onyx-1`** (queryable live via `gnokey query vm/qfile`) |
-  | `gno.land/p/<namespace>/assurance` | **`SUBMITTED_INERT`** in `vm/qinertpaths`, awaiting Onyx approver `enablepkg` |
-  | `gno.land/r/<namespace>/assurance` | **`SUBMITTED_INERT`** in `vm/qinertpaths`, awaiting Onyx approver `enablepkg` |
-  | `gno.land/p|r/<namespace>/*/v2` (`signals/v2`, `assurance/v2`, `effects/v2`) | Staged via `scripts/deploy-onyx.sh` with flat-gas AVL storage (`17.8×` gas cut) & checked-not-asserted `r/arobi/effects` |
+- **On-chain proof on `onyx-1`.** Check it with `node scripts/check-onyx-status.mjs --namespace g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak`:
+  | Path | Kind | Deployed at height | Open |
+  | --- | --- | --- | --- |
+  | `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2` | package | 1,450,918 | [gnoweb](https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2) |
+  | `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2` | package | 1,450,922 | [gnoweb](https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2) |
+  | `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2` | realm | 1,450,924 | [gnoweb](https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2) |
+  | `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2` | realm | 1,450,926 | [gnoweb](https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2) |
 
-  Transaction hashes, deploy block heights, gas used, and the deployer bech32 namespace are omitted from this public file because they identify the deployer account. Share the live paths with judges privately if they need to confirm the on-chain submission.
+  All four are `ACTIVE`: their files are queryable (`vm/qfile`) and gnoweb renders the realms.
 
 ---
 

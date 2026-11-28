@@ -50,18 +50,24 @@ async function abciQuery(remote, queryPath, dataStr = '') {
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${remote}`);
-  const json = await res.json();
+  return decodeAbciResponse(await res.json());
+}
+
+/**
+ * One abci_query answer, in either shape: gno.land (tm2) nests its fields as result.response.ResponseBase.{Data, Error,
+ * Log} beside response.Value; other nodes use lowercase result.response.{data, error, log, value}. Reading only the
+ * lowercase shape made every live Onyx path read as NOT_SUBMITTED (fixed 2026-11-28).
+ */
+export function decodeAbciResponse(json) {
   const resp = json?.result?.response || {};
-  const decoded = resp.data
-    ? Buffer.from(resp.data, 'base64').toString('utf8')
-    : resp.value
-      ? Buffer.from(resp.value, 'base64').toString('utf8')
-      : '';
+  const base = resp.ResponseBase || {};
+  const raw = base.Data ?? resp.data ?? resp.Value ?? resp.value;
+  const error = base.Error ?? resp.error ?? null;
   return {
     code: resp.code ?? 0,
-    error: resp.error || null,
-    log: resp.log || '',
-    data: decoded,
+    error: error && (typeof error !== 'object' || Object.keys(error).length) ? error : null,
+    log: base.Log ?? resp.log ?? '',
+    data: raw ? Buffer.from(raw, 'base64').toString('utf8') : '',
   };
 }
 
@@ -88,6 +94,18 @@ async function main(argv = process.argv.slice(2)) {
       inertPaths: 'gno.land/p/g1example/assurance\n',
     });
     assert.equal(missing.status, 'NOT_SUBMITTED');
+
+    // Both answer shapes decode: gno.land's ResponseBase (Onyx) and the lowercase one.
+    const files = Buffer.from('coherence.gno\ngnomod.toml\n').toString('base64');
+    const tm2 = decodeAbciResponse({ result: { response: { ResponseBase: { Error: null, Data: files, Log: '' }, Value: null } } });
+    assert.equal(tm2.data, 'coherence.gno\ngnomod.toml\n');
+    assert.equal(tm2.error, null);
+    const lower = decodeAbciResponse({ result: { response: { data: files, log: '' } } });
+    assert.equal(lower.data, tm2.data);
+    const failed = decodeAbciResponse({ result: { response: { ResponseBase: { Error: { msg: 'not found' }, Data: null, Log: 'package not found' } } } });
+    assert.equal(failed.data, '');
+    assert.equal(failed.log, 'package not found');
+    assert.ok(failed.error);
     console.log(JSON.stringify({ ok: true, selfTest: 'PASS' }));
     return;
   }

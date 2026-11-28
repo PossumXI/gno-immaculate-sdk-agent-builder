@@ -42,13 +42,16 @@ You can inspect live `onyx-1` block height, active package files, and `vm/qinert
 
 ```bash
 node scripts/check-onyx-status.mjs --offline-self-test
-node scripts/check-onyx-status.mjs --namespace <deployer-g1-address>
+node scripts/check-onyx-status.mjs --namespace g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak
 ```
 
-### Verified On-Chain State (checked `2026-11-26 19:03 UTC`, Onyx block `1,433,003`)
-- **`gno.land/p/<namespace>/signals` — `ACTIVE` on `onyx-1`:** Live and queryable right now via `gnokey query vm/qfile -data gno.land/p/<namespace>/signals -remote https://rpc.onyx.testnets.gno.land:443` (`coherence.gno`, `drift.gno`, `filters.gno`, `gnomod.toml`, `math.gno`).
-- **`gno.land/p/<namespace>/assurance` & `gno.land/r/<namespace>/assurance` — `SUBMITTED_INERT` on `onyx-1`:** Confirmed on-chain in `vm/qinertpaths`, awaiting Onyx approver `enablepkg` activation.
-- **Versioned `/v2` Upgrade (`scripts/deploy-onyx.sh`):** Because Gno package paths are immutable once submitted, `scripts/deploy-onyx.sh` stages and deploys the latest flat-gas AVL storage (`#11`) and checked-not-asserted `r/arobi/effects` realm (`#16`) cleanly under `/v2` paths (`p/<ns>/signals/v2`, `p/<ns>/assurance/v2`, `r/<ns>/assurance/v2`, `r/<ns>/effects/v2`).
+### Verified on-chain state (checked 2026-11-28 00:23 UTC)
+- `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2`: `ACTIVE` (package, deployed at height 1,450,918): https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/signals/v2
+- `gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2`: `ACTIVE` (package, deployed at height 1,450,922): https://onyx.testnets.gno.land/p/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2
+- `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2`: `ACTIVE` (realm, deployed at height 1,450,924): https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/assurance/v2
+- `gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2`: `ACTIVE` (realm, deployed at height 1,450,926): https://onyx.testnets.gno.land/r/g1jkstuy23a8e44jvdjajc5gjjry9vwevmkvmdak/effects/v2
+- The first submission (the 2026-11-23 code, unversioned paths) stays live under an earlier namespace. A Gno path is
+  immutable once submitted, so the current code is the `/v2` set above (`scripts/deploy-onyx.sh`).
 
 ---
 
